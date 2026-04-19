@@ -1,0 +1,40 @@
+# Local dev PostgreSQL data (portable cluster used for ClinicSaaS on Windows)
+.local_pg/
+
+# Dependencies and build outputs
+node_modules/
+**/node_modules/
+.next/
+**/out/
+**/dist/
+**/bin/
+**/obj/
+*.user
+.vs/
+.idea/
+
+# Secrets and local env (never commit)
+.env
+.env.local
+.env.*.local
+.env.prod
+*.pem
+
+# Logs and caches
+*.log
+npm-debug.log*
+.turbo/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# WhatsApp Web.js session and browser profile (local only; never commit)
+whatsapp-bridge/auth-webjs/
+whatsapp-bridge/auth/
+whatsapp-bridge/.wwebjs_cache/
+whatsapp-bridge/logs/
+
+# Local build / export drops (regenerate in CI or tooling)
+artifacts/
+

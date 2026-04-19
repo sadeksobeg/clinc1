@@ -1,0 +1,48 @@
+{
+  "name": "clinic-ops-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=18.17.0 <21.0.0"
+  },
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "hash-password": "node scripts/hash-password.cjs",
+    "test": "vitest run",
+    "db:apply-scheduling": "node scripts/apply-scheduling-sql.cjs",
+    "db:apply-core-outbox": "node scripts/apply-core-outbox-migrations.cjs",
+    "db:apply-outbox-blocked": "node scripts/apply-outbox-blocked-migration.cjs",
+    "db:provision-local-ops": "node scripts/provision-ops-crm-database.cjs",
+    "db:list-tables": "node scripts/db-list-tables.cjs",
+    "db:replay-events": "node scripts/replay-domain-events.cjs",
+    "worker:event-consumer-stub": "node scripts/event-consumer-stub.cjs"
+  },
+  "dependencies": {
+    "autoprefixer": "10.4.20",
+    "bcryptjs": "2.4.3",
+    "jose": "5.9.6",
+    "luxon": "3.5.0",
+    "next": "14.2.18",
+    "pg": "8.13.1",
+    "postcss": "8.4.49",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "redis": "^4.7.0",
+    "tailwindcss": "3.4.15",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/luxon": "3.4.2",
+    "@types/node": "20.14.10",
+    "@types/pg": "8.11.10",
+    "@types/react": "18.3.3",
+    "typescript": "5.5.4",
+    "vitest": "2.1.6"
+  },
+  "optionalDependencies": {
+    "@next/swc-win32-x64-msvc": "^14.2.18"
+  }
+}

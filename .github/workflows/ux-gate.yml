@@ -1,0 +1,35 @@
+name: UX Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ux-gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/ClinicSaaS.Web/package-lock.json
+
+      - name: Install deps
+        working-directory: frontend/ClinicSaaS.Web
+        run: npm ci
+
+      - name: Run Lint
+        working-directory: frontend/ClinicSaaS.Web
+        run: npm run lint
+
+      - name: Run UX Checks
+        run: node scripts/ux-check.js
+
+      - name: Fail on warnings (strict mode)
+        if: github.base_ref == 'main'
+        run: node scripts/ux-check.js --strict

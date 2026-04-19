@@ -1,0 +1,51 @@
+# Host nginx example: TLS termination → local Docker-published ports.
+# Copy to /etc/nginx/sites-enabled/ and replace domain + certificate paths.
+#
+# Assumes:
+#   - ops-dashboard published on host port 3001
+#   - n8n published on host port 5678
+#   - WhatsApp bridge on host port 3100 (optional location block)
+
+upstream clinic_ops {
+  server 127.0.0.1:3001;
+}
+
+upstream clinic_n8n {
+  server 127.0.0.1:5678;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name ops.example.com;
+
+  ssl_certificate     /etc/letsencrypt/live/ops.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/ops.example.com/privkey.pem;
+
+  location / {
+    proxy_pass http://clinic_ops;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+
+server {
+  listen 443 ssl http2;
+  server_name n8n.example.com;
+
+  ssl_certificate     /etc/letsencrypt/live/n8n.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/n8n.example.com/privkey.pem;
+
+  location / {
+    proxy_pass http://clinic_n8n;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}

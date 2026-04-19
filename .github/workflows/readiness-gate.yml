@@ -1,0 +1,51 @@
+name: Readiness Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Run backend tests
+        run: dotnet test tests/ClinicSaaS.Application.Tests/ClinicSaaS.Application.Tests.csproj -c Release --no-build
+
+  frontend-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/ClinicSaaS.Web/package-lock.json
+
+      - name: Install deps
+        working-directory: frontend/ClinicSaaS.Web
+        run: npm ci
+
+      - name: UX strict gate
+        run: node scripts/ux-check.js --strict
+
+      - name: Frontend build
+        working-directory: frontend/ClinicSaaS.Web
+        run: npm run build
+

@@ -1,0 +1,44 @@
+import { NextResponse } from "next/server";
+import { getPool } from "@/lib/db";
+import { getSession } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  const session = await getSession();
+  if (!session?.sub || session.clinicId == null) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const clinicId = Number(session.clinicId);
+  const pool = getPool();
+  const r = await pool.query(
+    `SELECT c.id AS conversation_id,
+            c.state,
+            c.status,
+            p.id AS patient_id,
+            p.chat_id,
+            p.display_name,
+            p.is_vip,
+            p.is_blacklisted,
+            lm.text AS last_message,
+            lm.created_at AS last_message_at
+     FROM conversations c
+     JOIN patients p ON p.id = c.patient_id
+     LEFT JOIN LATERAL (
+       SELECT m.text, m.created_at
+       FROM messages m
+       WHERE m.conversation_id = c.id
+       ORDER BY m.created_at DESC
+       LIMIT 1
+     ) lm ON TRUE
+     WHERE c.clinic_id = $1
+       AND c.deleted_at IS NULL
+       AND c.status = 'open'
+     ORDER BY lm.created_at DESC NULLS LAST, c.updated_at DESC
+     LIMIT 200`,
+    [clinicId],
+  );
+
+  return NextResponse.json({ ok: true, rows: r.rows });
+}

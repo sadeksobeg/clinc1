@@ -1,0 +1,76 @@
+<div class="min-h-screen">
+  <header class="sticky top-0 z-20 border-b border-white/10 bg-slate-950/60 backdrop-blur">
+    <div class="mx-auto flex max-w-7xl items-center gap-4 px-6 py-4">
+      <a routerLink="/dashboard" class="text-sm font-semibold tracking-tight">ClinicSaaS</a>
+      @if (isPublicRoute() || !auth.isAuthenticated()) {
+        <a routerLink="/" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('home') }}</a>
+        <a routerLink="/features" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('features') }}</a>
+        <a routerLink="/pricing" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('pricing') }}</a>
+        <a routerLink="/demo" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('requestDemo') }}</a>
+        <a routerLink="/contact" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('contact') }}</a>
+      }
+      @if (auth.isAuthenticated() && auth.getRole() === 'PlatformAdmin') {
+        <a routerLink="/platform/overview" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('platformAdmin') }}</a>
+        <a routerLink="/platform/subscriptions" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('pendingSubscriptions') }}</a>
+        <a routerLink="/platform/onboarding" class="text-xs text-slate-300 hover:text-white">Onboarding</a>
+        <a routerLink="/platform/support" class="text-xs text-slate-300 hover:text-white">Support</a>
+      }
+      @if (auth.isAuthenticated() && auth.getRole() === 'Doctor') {
+        <a routerLink="/clinic/doctor/billing" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('doctorBillingTitle') }}</a>
+      }
+      @if (auth.isAuthenticated() && auth.getRole() !== 'PlatformAdmin') {
+        <a routerLink="/clinic/analytics" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('analyticsDashboard') }}</a>
+        <a routerLink="/clinic/communications" class="text-xs text-slate-300 hover:text-white">{{ i18n.t('communications') }}</a>
+      }
+      <div class="text-xs text-slate-400">
+        <span class="ui-context-badge">{{ auth.getDisplayName() || auth.getRole() || '—' }}</span>
+      </div>
+
+      <div class="flex-1"></div>
+      @if (auth.isAuthenticated() && auth.getRole() !== 'PlatformAdmin') {
+        <app-notification-center />
+      }
+      <button
+        type="button"
+        class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10"
+        (click)="toggleLocale()"
+      >
+        {{ i18n.locale() === 'ar' ? 'EN' : 'AR' }}
+      </button>
+
+      @if (!auth.isAuthenticated()) {
+        <a class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10" routerLink="/login"
+          >{{ i18n.t('login') }}</a
+        >
+      } @else {
+        <a
+          class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
+          [routerLink]="dashboardLink()"
+          >{{ i18n.t('dashboard') }}</a
+        >
+        <button
+          type="button"
+          class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
+          (click)="logout()"
+        >
+          {{ i18n.t('logout') }}
+        </button>
+      }
+    </div>
+  </header>
+
+  @if (toast.message()) {
+    <div class="pointer-events-none fixed bottom-6 left-0 right-0 z-50 px-6">
+      <div
+        class="pointer-events-auto mx-auto flex max-w-xl items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm shadow-lg"
+        [class]="toastClass()"
+      >
+        <div class="leading-snug">{{ toast.message()!.text }}</div>
+        <button type="button" class="rounded-lg bg-white/10 px-2 py-1 text-xs" (click)="toast.dismiss()">{{ i18n.t('close') }}</button>
+      </div>
+    </div>
+  }
+
+  <router-outlet />
+</div>
+

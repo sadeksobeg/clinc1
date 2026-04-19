@@ -1,0 +1,75 @@
+# Production-oriented stack (WhatsApp bridge usually runs on the host for Chrome / QR).
+# Usage from repo root:
+#   set POSTGRES_PASSWORD, DATABASE_URL, JWT_SECRET in a .env file
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+# TLS: terminate at a host nginx / cloud LB — see deploy/nginx/clinic.conf.example
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PUBLISH_PORT:-6379}:6379"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-clinicsaas}
+    ports:
+      - "${POSTGRES_PUBLISH_PORT:-5432}:5432"
+    volumes:
+      - clinic_pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-clinicsaas}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${N8N_PUBLISH_PORT:-5678}:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=${N8N_PUBLIC_WEBHOOK_URL:-http://localhost:5678/}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Asia/Amman}
+      - OPS_DASHBOARD_URL=${OPS_DASHBOARD_URL:-http://host.docker.internal:3001}
+      - SCHEDULING_SERVICE_TOKEN=${SCHEDULING_SERVICE_TOKEN:-}
+    volumes:
+      - clinic_n8n_data_prod:/home/node/.n8n
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  ops-dashboard:
+    build:
+      context: ./ops-dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${OPS_PUBLISH_PORT:-3001}:3001"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL for ops-dashboard}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      BRIDGE_INTERNAL_URL: ${BRIDGE_INTERNAL_URL:-http://host.docker.internal:3100}
+      BRIDGE_SEND_TOKEN: ${BRIDGE_SEND_TOKEN:-}
+      SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:-}
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      NODE_ENV: production
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+
+volumes:
+  clinic_pgdata_prod:
+  clinic_n8n_data_prod:

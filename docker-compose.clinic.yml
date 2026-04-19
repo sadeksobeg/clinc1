@@ -1,0 +1,60 @@
+# Local production stack: PostgreSQL + n8n (+ optional bridge runs on host for Chrome)
+# Usage: docker compose -f docker-compose.clinic.yml up -d
+# n8n: http://localhost:5678  | Postgres: localhost:5435 (host) / postgres:5432 (internal)
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: clinic-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: clinic-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: clinicsaas
+    ports:
+      - "5435:5432"
+    volumes:
+      - clinic_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d clinicsaas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: clinic-n8n
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Asia/Amman
+      # Clinic Scheduling Engine (node "Scheduling Engine" in workflow)
+      - OPS_DASHBOARD_URL=http://host.docker.internal:3001
+      - SCHEDULING_SERVICE_TOKEN=${SCHEDULING_SERVICE_TOKEN:-}
+      # Must match bridge N8N_WEBHOOK_HMAC_SECRET when set (workflow node "Verify Webhook HMAC")
+      - N8N_WEBHOOK_HMAC_SECRET=${N8N_WEBHOOK_HMAC_SECRET:-}
+      # n8n → bridge /send (HTTP Request nodes)
+      - BRIDGE_SEND_URL=${BRIDGE_SEND_URL:-http://host.docker.internal:3100}
+    volumes:
+      - clinic_n8n_data:/home/node/.n8n
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  clinic_pgdata:
+  clinic_n8n_data:
