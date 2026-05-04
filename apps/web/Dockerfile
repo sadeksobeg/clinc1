@@ -12,6 +12,8 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Next standalone يتوقع وجود public عند النسخ — المجلد قد يكون غير موجود في المستودع
+RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
