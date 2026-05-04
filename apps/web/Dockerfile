@@ -5,7 +5,8 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+# package-lock غالبًا غير متزامن مع pnpm محليًا — npm install يولّد شجرة صالحة للبناء داخل الصورة
+RUN npm install --legacy-peer-deps
 
 FROM node:20-alpine AS builder
 WORKDIR /app
