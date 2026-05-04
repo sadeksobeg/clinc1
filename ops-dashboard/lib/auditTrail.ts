@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 type AuditArgs = {
   clinicId?: number | null;
@@ -10,8 +10,8 @@ type AuditArgs = {
   payload?: Record<string, unknown>;
 };
 
-export async function insertAuditLog(pool: Pool, args: AuditArgs): Promise<void> {
-  await pool.query(
+export async function insertAuditLog(db: Pool | PoolClient, args: AuditArgs): Promise<void> {
+  await db.query(
     `INSERT INTO audit_logs (clinic_id, actor_type, actor_id, action, entity_type, entity_id, payload)
      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
     [
@@ -27,10 +27,10 @@ export async function insertAuditLog(pool: Pool, args: AuditArgs): Promise<void>
 }
 
 export async function hasIdempotentAudit(
-  pool: Pool,
+  db: Pool | PoolClient,
   args: { clinicId: number; action: string; entityId?: string | null; idempotencyKey: string },
 ): Promise<boolean> {
-  const r = await pool.query(
+  const r = await db.query(
     `SELECT id
      FROM audit_logs
      WHERE clinic_id = $1

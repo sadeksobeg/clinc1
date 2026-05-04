@@ -146,7 +146,9 @@ export async function POST(req: Request) {
       );
     }
 
-    await insertAuditLog(client, {
+    await client.query("COMMIT");
+
+    await insertAuditLog(pool, {
       clinicId,
       actorType: "staff",
       actorId: actor ? String(actor) : null,
@@ -156,7 +158,6 @@ export async function POST(req: Request) {
       payload: { slug, owner_email: b.owner_email.toLowerCase(), doctors_count: b.doctors_count, trial_days: b.trial_days },
     }).catch(() => undefined);
 
-    await client.query("COMMIT");
     return NextResponse.json({ ok: true, clinic_id: clinicId, clinic_slug: slug, admin_user_id: userId }, { status: 201 });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => undefined);
