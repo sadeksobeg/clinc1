@@ -1,7 +1,7 @@
 const crm = $input.first().json;
 async function main() {
-  const base = process.env.OPS_DASHBOARD_URL || "http://host.docker.internal:3001";
-  const token = process.env.SCHEDULING_SERVICE_TOKEN || "";
+  const base = String($env.OPS_DASHBOARD_URL || "http://host.docker.internal:3001");
+  const token = String($env.SCHEDULING_SERVICE_TOKEN || "");
   if (!token) {
     return {
       ...crm,

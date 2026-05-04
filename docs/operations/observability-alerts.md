@@ -1,33 +1,73 @@
-# Observability and Alert Definitions
+# Observability and Alert Definitions (P6 Ready)
 
-## Metrics Sources
-- `GET /api/platform/metrics` for runtime API/auth/intelligence KPIs.
-- `GET /api/platform/health/overview` for worker and dependency health.
+## Runtime Sources (currently live)
+- `GET /api/internal/system/health`
+- `GET /api/internal/system/queues`
+- `GET /api/internal/system/failures`
+- `GET /api/internal/system/errors`
+- `GET /api/system/health/deep`
 
-## Alert Rules
+## One-Command Alert Check
 
-### Auth Spike
-- Condition: 401/403 responses > 5% over 5 minutes.
-- Action: page on-call, inspect auth logs and token validation failures.
+Run:
 
-### Worker Down
-- Condition: any worker heartbeat stale > 5 minutes.
-- Action: restart worker host, inspect dead-letter queue growth.
+`npm run ops:alerts:check`
 
-### Database Latency
-- Condition: API p95 latency > 800ms for 10 minutes.
-- Action: inspect DB saturation, slow queries, connection pool.
+This command evaluates live thresholds and exits with:
+- `0` when no active alerts
+- `1` when one or more alerts are firing
 
-### Webhook Delivery Failure
-- Condition: dead-letter webhook count increases continuously for 10 minutes.
-- Action: verify outbound webhook endpoint, credentials, and retries.
+Script:
+- `ops-dashboard/scripts/alerts-watchdog.cjs`
 
-## Dashboard Panels
-- API p95 latency
-- Error rate %
-- Auth success %
-- Prediction accuracy %
-- Action success %
-- Ignored decisions %
-- Dead-letter webhooks count
+## Active Alert Rules (copy-paste thresholds)
+
+- `system.db.down` (critical)
+  - Condition: `health.db_ok = false`
+  - Action: failover/restart DB path, pause writes if needed.
+
+- `system.db.latency.high` (high)
+  - Condition: `health.db_latency_ms > 800`
+  - Action: inspect pool saturation and slow queries.
+
+- `jobs.dead.present` (critical)
+  - Condition: `queues.jobs_dead >= 1`
+  - Action: inspect dead jobs, retry/cancel toxic jobs.
+
+- `jobs.dead.spike24h` (high)
+  - Condition: `failures.dead_jobs_24h >= 3`
+  - Action: check runner health and idempotency regressions.
+
+- `billing.webhook.failures.spike` (high)
+  - Condition: `failures.webhook_failures_24h >= 5`
+  - Action: verify webhook signature, endpoint health, replay safety.
+
+- `billing.reminders.failures.spike` (medium)
+  - Condition: `failures.reminder_failures_24h >= 3`
+  - Action: inspect reminders worker token/network.
+
+- `messaging.failures.spike` (high)
+  - Condition: `failures.messaging_failures_24h >= 10`
+  - Action: check bridge availability, queue backlog, policy rejects.
+
+- `messaging.outbox.blocked` (high)
+  - Condition: `queues.outbox_blocked >= 20`
+  - Action: inspect policy gating, 24h window, kill switch settings.
+
+- `events.dead_letter.spike` (high)
+  - Condition: `queues.dead_letter_events >= 5`
+  - Action: inspect event consumer and failing handlers.
+
+- `errors.critical.occurrence_spike` (critical)
+  - Condition: any critical fingerprint occurrences `>= 3`
+  - Action: hotfix or isolate feature gate causing repeated critical error.
+
+## Webhook Delivery (optional)
+- Set `ALERT_WEBHOOK_URL` to receive alert payloads as JSON from watchdog.
+- Existing deep-health path also emits webhook when dead-letter spike threshold is breached.
+
+## Suggested Routing
+- `critical`: pager + on-call channel
+- `high`: on-call channel
+- `medium`: ticket + daily review
 

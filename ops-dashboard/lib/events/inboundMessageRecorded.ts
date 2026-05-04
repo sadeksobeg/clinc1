@@ -4,6 +4,8 @@ import { z } from "zod";
 export const inboundMessageRecordedSchema = z.object({
   type: z.literal("InboundMessageRecorded"),
   version: z.literal(1),
+  /** Deterministic id for consumer idempotency (see computeInboundEventId). */
+  event_id: z.string().min(16).max(128),
   occurred_at: z.string(),
   correlation_id: z.string(),
   clinic_id: z.number().int(),

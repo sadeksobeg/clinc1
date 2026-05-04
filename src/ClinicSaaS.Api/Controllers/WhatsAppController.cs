@@ -40,6 +40,10 @@ public sealed class WhatsAppController : ControllerBase
         [FromBody] WhatsAppIncomingRequest request,
         CancellationToken cancellationToken)
     {
+        var primary = Environment.GetEnvironmentVariable("OPS_WHATSAPP_PRIMARY_HANDLER");
+        if (string.Equals(primary, "ops", StringComparison.OrdinalIgnoreCase))
+            return StatusCode(StatusCodes.Status409Conflict, "WhatsApp inbound is owned by ops-dashboard for this environment.");
+
         if (_tenant.TenantId == Guid.Empty)
             return BadRequest("Tenant could not be resolved for this request.");
 

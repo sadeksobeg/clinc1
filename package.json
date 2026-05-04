@@ -1,0 +1,19 @@
+{
+  "name": "mid-auto-monorepo",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:web": "pnpm --filter clinic-saas-web dev",
+    "build:web": "pnpm --filter clinic-saas-web build",
+    "test:web": "pnpm --filter clinic-saas-web test",
+    "dev:ops": "npm run dev --prefix ops-dashboard",
+    "build:ops": "npm run build --prefix ops-dashboard",
+    "e2e:go-live-smoke": "node scripts/e2e-go-live-smoke.cjs",
+    "smoke:observability": "node scripts/observability-smoke.mjs",
+    "smoke:p5": "node scripts/p5-full-system-smoke.mjs",
+    "validate:p6-ops": "node scripts/p6-ops-center-validate.mjs",
+    "gate:p7": "node scripts/p7-go-live-gate.mjs",
+    "smoke:p8-super-admin": "node scripts/p8-super-admin-smoke.mjs",
+    "audit:production-env": "node scripts/production-env-audit.mjs"
+  }
+}

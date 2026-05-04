@@ -1,0 +1,99 @@
+name: Clinic OS CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: clinic-os-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apps-web:
+    name: apps/web (lint + test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      CI: "true"
+      NODE_ENV: "test"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint (strict, production gate)
+        run: npm run lint:strict
+      - name: Unit tests (Vitest)
+        run: npm test
+      - name: Build (next build)
+        env:
+          OPS_DASHBOARD_URL: "http://127.0.0.1:3001"
+        run: npm run build
+
+  ops-dashboard:
+    name: ops-dashboard (test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ops-dashboard
+    env:
+      CI: "true"
+      NODE_ENV: "test"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ops-dashboard/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests (Vitest)
+        run: npm test
+      - name: Build (next build)
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5432/ci_placeholder"
+          JWT_SECRET: "ci-placeholder-secret-at-least-32-chars-long"
+          SCHEDULING_SERVICE_TOKEN: "ci-placeholder-token-32-characters-long!!"
+        run: npm run build
+
+  whatsapp-bridge:
+    name: whatsapp-bridge (test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: whatsapp-bridge
+    env:
+      CI: "true"
+      # Avoid Puppeteer Chromium download on CI; the bridge uses system Chrome locally.
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: whatsapp-bridge/package-lock.json
+      - name: Install dependencies (skip Puppeteer browser)
+        run: npm ci
+      - name: Node built-in test runner
+        run: npm test
+
+  production-env-audit:
+    name: production env audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run env audit (production flag profile)
+        run: node scripts/production-env-audit.mjs

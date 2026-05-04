@@ -5,6 +5,7 @@
  *
  * Does not mutate state; "replay" is inspection-only until a worker consumes events.
  */
+require("./load-ops-env.cjs");
 const { Client } = require("pg");
 
 const args = Object.fromEntries(
@@ -27,14 +28,41 @@ async function main() {
   const c = new Client({ connectionString: url });
   await c.connect();
   try {
-    const { rows } = await c.query(
-      `SELECT id, event_type, payload, correlation_id, occurred_at::text AS occurred_at
-       FROM domain_events
-       WHERE conversation_id = $1
-       ORDER BY id DESC
-       LIMIT $2`,
-      [conv, limit],
-    );
+    let rows;
+    try {
+      const r = await c.query(
+        `SELECT id, event_type, payload, correlation_id, occurred_at::text AS occurred_at
+         FROM domain_events
+         WHERE conversation_id = $1
+         ORDER BY id DESC
+         LIMIT $2`,
+        [conv, limit],
+      );
+      rows = r.rows;
+    } catch (e) {
+      const code = e && typeof e === "object" && "code" in e ? e.code : "";
+      const msg = e instanceof Error ? e.message : String(e);
+      const missing =
+        code === "42P01" ||
+        /relation\s+"domain_events"\s+does not exist/i.test(msg) ||
+        (/does not exist/i.test(msg) && /domain_events/i.test(msg));
+      if (missing) {
+        console.log(
+          JSON.stringify(
+            {
+              skipped: true,
+              reason: "domain_events table missing",
+              hint: "Apply migration 006_domain_events.sql (e.g. npm run db:apply-scheduling if your pipeline includes it).",
+              conversation_id: conv,
+            },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+      throw e;
+    }
     console.log(JSON.stringify(rows, null, 2));
   } finally {
     await c.end();

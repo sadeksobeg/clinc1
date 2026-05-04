@@ -15,6 +15,10 @@ function loadConfig() {
     webhookUrl: process.env.N8N_WEBHOOK_URL || "http://localhost:5678/webhook/whatsapp",
     bridgePort: num(process.env.BRIDGE_PORT, 3100),
     clinicId: String(process.env.CLINIC_ID || "1").trim(),
+    opsDashboardUrl: (process.env.OPS_DASHBOARD_URL || "http://127.0.0.1:3001").trim(),
+    schedulingServiceToken: (process.env.SCHEDULING_SERVICE_TOKEN || "").trim(),
+    /** If true, bridge shows clinic menus; otherwise ops-dashboard is the single source of replies. */
+    waRoutingMenus: bool(process.env.WA_ROUTING_MENUS, false),
     replyWindowHours: num(process.env.REPLY_WINDOW_HOURS, 72),
     minReplyDelayMs: num(process.env.REPLY_MIN_DELAY_MS, 1000),
     maxReplyDelayMs: num(process.env.REPLY_MAX_DELAY_MS, 3000),
@@ -22,6 +26,11 @@ function loadConfig() {
     waChromePath: (process.env.WA_CHROME_PATH || "").trim(),
     waAuthDir: (process.env.WA_AUTH_DIR || "auth-webjs").trim(),
     waHeadless: bool(process.env.WA_HEADLESS, false),
+    /** مثال: `--disable-dev-shm-usage,--disable-background-networking` مفصولة بفواصل */
+    waPuppeteerExtraArgs: String(process.env.WA_PUPPETEER_EXTRA_ARGS || "")
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean),
     waAuthTimeoutMs: num(process.env.WA_AUTH_TIMEOUT_MS, 900000),
     inboundDedupWindowMs: num(process.env.INBOUND_DEDUP_WINDOW_MS, 120000),
     eventLogFile: (process.env.BRIDGE_EVENT_LOG_FILE || "logs/bridge-events.ndjson").trim(),

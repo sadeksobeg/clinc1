@@ -2,12 +2,20 @@ import { DateTime } from "luxon";
 import type { Pool } from "pg";
 import type { InboundIngestRow } from "@/lib/crm/inboundIngest";
 import { confirmAppointment } from "@/lib/scheduling/appointmentService";
-import { listClinics, setConversationSelectedClinic } from "@/lib/scheduling/routingActions";
+import { listClinics, setConversationSelectedClinicTx } from "@/lib/scheduling/routingActions";
 import { explainNoSlots, findNextSlots } from "@/lib/scheduling/slotService";
 import type { InterpretResult } from "@/lib/scheduling/types";
+import { getClinicPublicOpenStatus } from "@/lib/scheduling/clinicPublicHours";
+import { extractBookingEntities, logAiExtract, pickClinicIndexByHint, pickDoctorIndexByHint } from "@/lib/ai/bookingEntityExtract";
+import { findDoctorIdBySpecialtyOrNameToken, specialtySearchTokenFromText } from "@/lib/ai/doctorMatch";
+import { incProductMetric } from "@/lib/observability/productMetrics";
+import { upsertPatientConversationMemory } from "@/lib/conversations/patientConversationMemory";
+import { formatClinicTodayHoursAr } from "@/lib/scheduling/clinicPublicHours";
 import type { NormalizedInboundRules } from "./normalizeInbound";
-import { parseListSelection1Based } from "./dialogueParse";
+import { parseListSelectionWithOrdinals1Based, parseTimeOfDayFromText } from "./dialogueParse";
+import { formatDateTimeAr } from "./whatsappTime";
 import {
+  askPatientFullName,
   chooseClinicIntro,
   chooseDoctorIntro,
   confusedRecoveryMenu,
@@ -57,6 +65,12 @@ function routingClinicIdsFromEnv(): number[] {
   return raw.split(/[,;\s]+/).map((s) => Number.parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n) && n > 0);
 }
 
+async function patientHasDisplayName(pool: Pool, patientId: number): Promise<boolean> {
+  const r = await pool.query(`SELECT display_name FROM patients WHERE id = $1`, [patientId]);
+  const s = (r.rows[0]?.display_name as string) || "";
+  return s.trim().length >= 2;
+}
+
 function selectedClinicFromRouting(routing: Record<string, unknown>): number | null {
   const v = routing.selected_clinic_id;
   return typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -81,6 +95,7 @@ function unparsedInteractiveTurn(
   const prev = d.consecutive_unparsed ?? 0;
   const next = prev + 1;
   if (next >= FAILSAFE_UNPARSED_THRESHOLD) {
+    incProductMetric("ai_handoff_total");
     return {
       reply_text: handoffToSecretary(),
       finalIntent: "BOOKING",
@@ -102,6 +117,7 @@ function unparsedInteractiveTurn(
       },
     };
   }
+  incProductMetric("ai_confusion_total");
   return {
     reply_text: `${confusedRecoveryMenu()}\n\n${specificReprompt}`,
     finalIntent: "BOOKING",
@@ -134,6 +150,115 @@ async function loadDoctors(
   }));
 }
 
+async function commitSelectedClinic(pool: Pool, conversationId: number, clinicId: number): Promise<void> {
+  const lk = await pool.connect();
+  try {
+    await lk.query("BEGIN");
+    await lk.query(`SELECT id FROM conversations WHERE id = $1 FOR UPDATE`, [conversationId]);
+    await setConversationSelectedClinicTx(lk, conversationId, clinicId);
+    await lk.query("COMMIT");
+  } catch (e) {
+    await lk.query("ROLLBACK");
+    throw e;
+  } finally {
+    lk.release();
+  }
+}
+
+/** Shared path after a clinic row is chosen (list reply or AI clinic_hint). */
+async function continueBookingAfterClinicChosen(
+  pool: Pool,
+  crm: InboundIngestRow,
+  chosen: PendingClinicPick,
+  lastSpecialty: string | null | undefined,
+  timePrefActive: TimePreference | null,
+  tpMerge: DialogueTimePref | null,
+): Promise<ConsumedBookingTurn> {
+  const todayHours = await formatClinicTodayHoursAr(pool, chosen.clinic_id).catch(() => "");
+  await commitSelectedClinic(pool, crm.conversation_id, chosen.clinic_id);
+  void upsertPatientConversationMemory(pool, {
+    clinic_id: crm.clinic_id,
+    patient_id: crm.patient_id,
+    facts_patch: { last_clinic_id: chosen.clinic_id },
+  }).catch(() => undefined);
+  const pn = await pool.query(`SELECT display_name FROM patients WHERE id = $1`, [crm.patient_id]);
+  const hasName = !!String(pn.rows[0]?.display_name || "").trim();
+  if (!hasName) {
+    return {
+      reply_text: `تم اختيار العيادة: ${chosen.name}.\n${todayHours ? `${todayHours}\n` : ""}${askPatientFullName()}`,
+      finalIntent: "BOOKING",
+      finalPriority: 2,
+      decision_source: "dialogue_collect_name_after_clinic",
+      handoff_required: false,
+      dialogueMerge: {
+        flow_step: "awaiting_display_name",
+        collect_field: "display_name",
+        hub_clinic_id: chosen.clinic_id,
+        resume_after_name: "doctors",
+        pending_kind: null,
+        pending_clinics: [],
+        pending_doctors: [],
+        pending_slots: [],
+        last_specialty: lastSpecialty ?? null,
+        time_pref: tpMerge,
+        consecutive_unparsed: 0,
+        updated_at: nowIso(),
+      },
+    };
+  }
+  const doctors = await loadDoctors(pool, chosen.clinic_id, lastSpecialty);
+  const tp = timePrefActive;
+  if (doctors.length > 1) {
+    const lines = doctors.map((x) => `${x.ix}) ${x.display_name} (${x.specialty})`);
+    return {
+      reply_text: `تم اختيار العيادة: ${chosen.name}.\n${todayHours ? `${todayHours}\n` : ""}${chooseDoctorIntro(lines.join("\n"))}`,
+      finalIntent: "BOOKING",
+      finalPriority: 2,
+      decision_source: "dialogue_choose_doctor",
+      handoff_required: false,
+      dialogueMerge: {
+        flow_step: "choose_doctor",
+        pending_kind: "doctors",
+        pending_doctors: doctors,
+        pending_slots: [],
+        pending_clinics: [],
+        hub_clinic_id: chosen.clinic_id,
+        last_specialty: lastSpecialty ?? null,
+        consecutive_unparsed: 0,
+        updated_at: nowIso(),
+      },
+    };
+  }
+  if (doctors.length === 1) {
+    const doc = doctors[0]!;
+    const so = await slotOfferPayload(pool, crm, lastSpecialty, doc.doctor_id, tp);
+    return {
+      reply_text: `تم اختيار العيادة: ${chosen.name}.\n${todayHours ? `${todayHours}\n` : ""}${so.reply}`,
+      finalIntent: "BOOKING",
+      finalPriority: 2,
+      decision_source: "dialogue_slots",
+      handoff_required: false,
+      dialogueMerge: so.merge,
+    };
+  }
+  return {
+    reply_text: `تم اختيار العيادة: ${chosen.name}.\n${todayHours ? `${todayHours}\n` : ""}لكن لا يوجد أطباء نشطون لهذا التخصص حاليًا. يرجى التواصل مع السكرتارية.`,
+    finalIntent: "BOOKING",
+    finalPriority: 2,
+    decision_source: "dialogue_no_doctors",
+    handoff_required: false,
+    dialogueMerge: {
+      flow_step: "idle",
+      pending_kind: null,
+      pending_clinics: [],
+      pending_doctors: [],
+      pending_slots: [],
+      consecutive_unparsed: 0,
+      updated_at: nowIso(),
+    },
+  };
+}
+
 async function buildClinicPicks(pool: Pool, ids: number[]): Promise<PendingClinicPick[]> {
   const all = await listClinics(pool);
   const map = new Map(all.map((c) => [c.id, c]));
@@ -152,7 +277,7 @@ async function buildClinicPicks(pool: Pool, ids: number[]): Promise<PendingClini
 function formatSlotLines(slots: { starts_at: string; doctor_name: string }[], tz: string): string[] {
   return slots.map((s, i) => {
     const t = DateTime.fromISO(s.starts_at, { zone: "utc" }).setZone(tz);
-    return `${i + 1}) ${s.doctor_name} — ${t.toFormat("yyyy-LL-dd HH:mm")}`;
+    return `${i + 1}) ${s.doctor_name} — ${formatDateTimeAr(t)}`;
   });
 }
 
@@ -162,8 +287,10 @@ async function slotOfferPayload(
   specialty: string | null | undefined,
   doctorId: number | undefined,
   timePref: TimePreference | null,
+  opts?: { page?: number; forceNextDay?: boolean },
 ): Promise<{ reply: string; merge: Record<string, unknown> }> {
-  let fetchLimit = 3;
+  const page = Math.max(0, Math.floor(opts?.page ?? 0));
+  let fetchLimit = 3 + page * 3;
   if (timePref === "morning" || timePref === "afternoon") fetchLimit = 36;
   else if (timePref === "any") fetchLimit = 1;
 
@@ -184,7 +311,16 @@ async function slotOfferPayload(
   } else if (timePref === "any") {
     chosen = slots.slice(0, 1);
   } else {
-    chosen = slots.slice(0, 3);
+    chosen = slots.slice(page * 3, page * 3 + 3);
+  }
+
+  if (opts?.forceNextDay && chosen.length) {
+    const today = DateTime.now().setZone(tz).toISODate();
+    const later = slots.filter((s) => {
+      const t = DateTime.fromISO(s.starts_at, { zone: "utc" }).setZone(tz);
+      return t.isValid && t.toISODate() !== today;
+    });
+    chosen = later.slice(0, 3);
   }
 
   const lines = formatSlotLines(chosen, tz);
@@ -200,7 +336,7 @@ async function slotOfferPayload(
   } else if (chosen.length === 1 && timePref === "any") {
     const s = chosen[0]!;
     const t = DateTime.fromISO(s.starts_at, { zone: "utc" }).setZone(tz);
-    const whenLabel = t.isValid ? t.toFormat("yyyy-LL-dd HH:mm") : s.starts_at;
+    const whenLabel = t.isValid ? formatDateTimeAr(t) : s.starts_at;
     reply = singleSlotConfirmLine(whenLabel, s.doctor_name);
   } else {
     reply = slotListIntro(lines.join("\n"));
@@ -226,6 +362,7 @@ async function slotOfferPayload(
     hub_clinic_id: crm.clinic_id,
     consecutive_unparsed: 0,
     time_pref: mergeTimePref,
+    slot_page: chosen.length ? page : 0,
     updated_at: nowIso(),
   };
   return { reply, merge };
@@ -243,7 +380,7 @@ function slotConfirmPost(
     const tzR = await p.query(`SELECT timezone FROM clinics WHERE id = $1`, [confirmClinicId]);
     const tz = (tzR.rows[0]?.timezone as string) || "Asia/Amman";
     const t = DateTime.fromISO(slot.starts_at, { zone: "utc" }).setZone(tz);
-    const when = t.isValid ? t.toFormat("yyyy-LL-dd HH:mm") : slot.starts_at;
+    const when = t.isValid ? formatDateTimeAr(t) : slot.starts_at;
     const res = await confirmAppointment(p, {
       clinicId: confirmClinicId,
       patientId: crm.patient_id,
@@ -308,66 +445,88 @@ export async function tryConsumeBookingDialogueTurn(
   const { crm, norm, dialogue: d } = args;
   const step = d.flow_step;
 
-  if (step === "choose_clinic" && d.pending_kind === "clinics" && d.pending_clinics?.length) {
-    const pick = parseListSelection1Based(norm.text, d.pending_clinics.length);
-    if (pick == null) {
-      return unparsedInteractiveTurn(d, repromptChooseClinic(d.pending_clinics.length));
+  if (step === "awaiting_display_name" && d.collect_field === "display_name") {
+    const name = norm.text.trim();
+    if (name.length < 2) {
+      return unparsedInteractiveTurn(d, askPatientFullName());
     }
-    const chosen = d.pending_clinics[pick - 1]!;
-    await setConversationSelectedClinic(pool, crm.conversation_id, chosen.clinic_id);
-    const doctors = await loadDoctors(pool, chosen.clinic_id, d.last_specialty);
-    const tp = dialogueTimePrefFromStored(d);
-    if (doctors.length > 1) {
-      const lines = doctors.map((x) => `${x.ix}) ${x.display_name} (${x.specialty})`);
+    await pool.query(`UPDATE patients SET display_name = $1, updated_at = NOW() WHERE id = $2`, [
+      name.slice(0, 200),
+      crm.patient_id,
+    ]);
+    const hub = typeof d.hub_clinic_id === "number" ? d.hub_clinic_id : crm.clinic_id;
+    const resume = d.resume_after_name;
+    if (resume === "doctors") {
+      const doctors = await loadDoctors(pool, hub, d.last_specialty);
+      const tp = dialogueTimePrefFromStored(d);
+      if (doctors.length > 1) {
+        const lines = doctors.map((x) => `${x.ix}) ${x.display_name} (${x.specialty})`);
+        return {
+          reply_text: `شكراً ${name}.\n${chooseDoctorIntro(lines.join("\n"))}`,
+          finalIntent: "BOOKING",
+          finalPriority: 2,
+          decision_source: "dialogue_choose_doctor_after_name",
+          handoff_required: false,
+          dialogueMerge: {
+            flow_step: "choose_doctor",
+            pending_kind: "doctors",
+            pending_doctors: doctors,
+            pending_clinics: [],
+            pending_slots: [],
+            collect_field: null,
+            resume_after_name: null,
+            hub_clinic_id: hub,
+            last_specialty: d.last_specialty,
+            consecutive_unparsed: 0,
+            time_pref: tp,
+            updated_at: nowIso(),
+          },
+        };
+      }
+      if (doctors.length === 1) {
+        const doc = doctors[0]!;
+        const so = await slotOfferPayload(pool, crm, d.last_specialty, doc.doctor_id, tp);
+        return {
+          reply_text: `شكراً ${name}.\n${so.reply}`,
+          finalIntent: "BOOKING",
+          finalPriority: 2,
+          decision_source: "dialogue_slots_after_name",
+          handoff_required: false,
+          dialogueMerge: so.merge,
+        };
+      }
       return {
-        reply_text: `تم اختيار العيادة: ${chosen.name}.\n${chooseDoctorIntro(lines.join("\n"))}`,
+        reply_text: `شكراً ${name}. لا يوجد أطباء نشطون لهذا التخصص في العيادة حاليًا. يرجى التواصل مع السكرتارية.`,
         finalIntent: "BOOKING",
         finalPriority: 2,
-        decision_source: "dialogue_choose_doctor",
+        decision_source: "dialogue_no_doctors_after_name",
         handoff_required: false,
         dialogueMerge: {
-          flow_step: "choose_doctor",
-          pending_kind: "doctors",
-          pending_doctors: doctors,
-          pending_slots: [],
+          flow_step: "idle",
+          pending_kind: null,
           pending_clinics: [],
+          pending_doctors: [],
+          pending_slots: [],
           consecutive_unparsed: 0,
           updated_at: nowIso(),
         },
       };
     }
-    if (doctors.length === 1) {
-      const doc = doctors[0]!;
-      const so = await slotOfferPayload(pool, crm, d.last_specialty, doc.doctor_id, tp);
-      return {
-        reply_text: `تم اختيار العيادة: ${chosen.name}.\n${so.reply}`,
-        finalIntent: "BOOKING",
-        finalPriority: 2,
-        decision_source: "dialogue_slots",
-        handoff_required: false,
-        dialogueMerge: so.merge,
-      };
+    return unparsedInteractiveTurn(d, askPatientFullName());
+  }
+
+  if (step === "choose_clinic" && d.pending_kind === "clinics" && d.pending_clinics?.length) {
+    const pick = parseListSelectionWithOrdinals1Based(norm.text, d.pending_clinics.length);
+    if (pick == null) {
+      return unparsedInteractiveTurn(d, repromptChooseClinic(d.pending_clinics.length));
     }
-    return {
-      reply_text: `تم اختيار العيادة: ${chosen.name}، لكن لا يوجد أطباء نشطون لهذا التخصص حاليًا. يرجى التواصل مع السكرتارية.`,
-      finalIntent: "BOOKING",
-      finalPriority: 2,
-      decision_source: "dialogue_no_doctors",
-      handoff_required: false,
-      dialogueMerge: {
-        flow_step: "idle",
-        pending_kind: null,
-        pending_clinics: [],
-        pending_doctors: [],
-        pending_slots: [],
-        consecutive_unparsed: 0,
-        updated_at: nowIso(),
-      },
-    };
+    const chosen = d.pending_clinics[pick - 1]!;
+    const tp = dialogueTimePrefFromStored(d);
+    return continueBookingAfterClinicChosen(pool, crm, chosen, d.last_specialty, tp, tp);
   }
 
   if (step === "choose_doctor" && d.pending_kind === "doctors" && d.pending_doctors?.length) {
-    const pick = parseListSelection1Based(norm.text, d.pending_doctors.length);
+    const pick = parseListSelectionWithOrdinals1Based(norm.text, d.pending_doctors.length);
     if (pick == null) {
       return unparsedInteractiveTurn(d, repromptChooseDoctor());
     }
@@ -385,8 +544,82 @@ export async function tryConsumeBookingDialogueTurn(
   }
 
   if (step === "slot_offer" && d.pending_kind === "slots" && d.pending_slots?.length) {
-    const pick = parseListSelection1Based(norm.text, d.pending_slots.length);
+    const raw = norm.text.trim();
+    const compact = raw.replace(/\s+/g, " ");
+    const isBack = compact === "0" || compact.includes("رجوع");
+    const isMore = compact.includes("مواعيد") && (compact.includes("اخرى") || compact.includes("أخرى"));
+    const isChangeDay = compact.includes("تغيير") && compact.includes("اليوم");
+
+    if (isBack) {
+      const clinicId = d.hub_clinic_id || crm.clinic_id;
+      const doctors = await loadDoctors(pool, clinicId, d.last_specialty);
+      if (doctors.length > 1) {
+        const lines = doctors.map((x) => `${x.ix}) ${x.display_name} (${x.specialty})`);
+        return {
+          reply_text: chooseDoctorIntro(lines.join("\n")),
+          finalIntent: "BOOKING",
+          finalPriority: 2,
+          decision_source: "dialogue_back_to_doctors",
+          handoff_required: false,
+          dialogueMerge: {
+            flow_step: "choose_doctor",
+            pending_kind: "doctors",
+            pending_doctors: doctors,
+            pending_slots: [],
+            pending_clinics: [],
+            hub_clinic_id: clinicId,
+            last_specialty: d.last_specialty ?? null,
+            consecutive_unparsed: 0,
+            slot_page: 0,
+            updated_at: nowIso(),
+          },
+        };
+      }
+      return unparsedInteractiveTurn(d, "اختر رقم الموعد من القائمة، أو اكتب وقتًا مثل: 5:00.");
+    }
+
+    if (isMore || isChangeDay) {
+      const doctorId = d.pending_slots?.[0]?.doctor_id;
+      const tp = dialogueTimePrefFromStored(d);
+      const nextPage = isMore ? (d.slot_page ?? 0) + 1 : 0;
+      const so = await slotOfferPayload(pool, crm, d.last_specialty, doctorId, tp, {
+        page: nextPage,
+        forceNextDay: isChangeDay,
+      });
+      return {
+        reply_text: so.reply,
+        finalIntent: "BOOKING",
+        finalPriority: 2,
+        decision_source: isMore ? "dialogue_slots_more" : "dialogue_slots_change_day",
+        handoff_required: false,
+        dialogueMerge: so.merge,
+      };
+    }
+
+    const pick = parseListSelectionWithOrdinals1Based(norm.text, d.pending_slots.length);
     if (pick == null) {
+      const parsed = parseTimeOfDayFromText(norm.text);
+      if (parsed) {
+        const tzR = await pool.query(`SELECT timezone FROM clinics WHERE id = $1`, [d.hub_clinic_id || crm.clinic_id]);
+        const tz = (tzR.rows[0]?.timezone as string) || "Asia/Amman";
+        const match = d.pending_slots.find((s) => {
+          const local = DateTime.fromISO(s.starts_at, { zone: "utc" }).setZone(tz);
+          if (!local.isValid) return false;
+          if (parsed.hasMinute) return local.hour === parsed.hour && local.minute === parsed.minute;
+          return local.hour === parsed.hour;
+        });
+        if (match) {
+          return {
+            reply_text: "",
+            finalIntent: "BOOKING",
+            finalPriority: 2,
+            decision_source: "dialogue_confirm_time_match",
+            handoff_required: false,
+            dialogueMerge: {},
+            postProcess: slotConfirmPost(pool, crm, match),
+          };
+        }
+      }
       return unparsedInteractiveTurn(d, repromptChooseSlot(d.pending_slots.length));
     }
     const slot = d.pending_slots[pick - 1]!;
@@ -414,16 +647,105 @@ export async function startBookingDialogueFlow(
   routing: Record<string, unknown>,
   interpret: InterpretResult,
   bookingText: string,
+  opts?: { skipDisplayNamePrompt?: boolean },
 ): Promise<ConsumedBookingTurn> {
   const tpMerge = timePrefForMerge(bookingText);
   const timePrefActive: TimePreference | null = tpMerge;
 
+  const ext = await extractBookingEntities(bookingText);
+  if (ext.source === "ollama") {
+    await logAiExtract(pool, {
+      clinic_id: crm.clinic_id,
+      conversation_id: crm.conversation_id,
+      patient_id: crm.patient_id,
+      kind: "booking_extract",
+      input_excerpt: bookingText,
+      output: ext as unknown as Record<string, unknown>,
+    }).catch(() => undefined);
+  }
+  if (ext.patient_name_hint?.trim() && ext.patient_name_hint.trim().length >= 2) {
+    await pool.query(
+      `UPDATE patients SET display_name = $1, updated_at = NOW()
+       WHERE id = $2 AND (display_name IS NULL OR trim(display_name) = '')`,
+      [ext.patient_name_hint.trim().slice(0, 200), crm.patient_id],
+    );
+  }
+  if (interpret.patient_name?.trim() && interpret.patient_name.trim().length >= 2) {
+    await pool.query(
+      `UPDATE patients SET display_name = $1, updated_at = NOW()
+       WHERE id = $2 AND (display_name IS NULL OR trim(display_name) = '')`,
+      [interpret.patient_name.trim().slice(0, 200), crm.patient_id],
+    );
+  }
+
   const envIds = routingClinicIdsFromEnv();
   const selected = selectedClinicFromRouting(routing);
+  const effForHours = selected ?? crm.clinic_id;
+  const pub = await getClinicPublicOpenStatus(pool, effForHours);
+  if (!pub.open) {
+    return {
+      reply_text: pub.closed_message_ar,
+      finalIntent: "BOOKING",
+      finalPriority: 3,
+      decision_source: "clinic_public_hours_closed",
+      handoff_required: false,
+      dialogueMerge: {
+        flow_step: "idle",
+        pending_kind: null,
+        pending_slots: [],
+        pending_doctors: [],
+        pending_clinics: [],
+        consecutive_unparsed: 0,
+        updated_at: nowIso(),
+      },
+    };
+  }
+
+  const hasDisplay =
+    opts?.skipDisplayNamePrompt === true ||
+    (crm.patient_display_name && crm.patient_display_name.trim().length >= 2) ||
+    (await patientHasDisplayName(pool, crm.patient_id));
+  if (!hasDisplay && (envIds.length <= 1 || selected != null)) {
+    return {
+      reply_text: askPatientFullName(),
+      finalIntent: "BOOKING",
+      finalPriority: 2,
+      decision_source: "dialogue_collect_display_name",
+      handoff_required: false,
+      dialogueMerge: {
+        flow_step: "awaiting_display_name",
+        collect_field: "display_name",
+        hub_clinic_id: selected ?? crm.clinic_id,
+        resume_after_name: "doctors",
+        pending_kind: null,
+        pending_clinics: [],
+        pending_doctors: [],
+        pending_slots: [],
+        last_specialty: interpret.specialty,
+        consecutive_unparsed: 0,
+        time_pref: tpMerge,
+        updated_at: nowIso(),
+      },
+    };
+  }
 
   if (envIds.length > 1 && selected == null) {
     const picks = await buildClinicPicks(pool, envIds);
     if (picks.length >= 2) {
+      const autoIx = pickClinicIndexByHint(picks, interpret.clinic_hint);
+      if (autoIx != null) {
+        const chosen = picks.find((c) => c.ix === autoIx);
+        if (chosen) {
+          return continueBookingAfterClinicChosen(
+            pool,
+            crm,
+            chosen,
+            interpret.specialty,
+            timePrefActive,
+            tpMerge,
+          );
+        }
+      }
       const lines = picks.map((c) => `${c.ix}) ${c.name}`);
       return {
         reply_text: chooseClinicIntro(lines.join("\n")),
@@ -448,7 +770,43 @@ export async function startBookingDialogueFlow(
   }
 
   const effClinic = selected ?? crm.clinic_id;
-  const doctors = await loadDoctors(pool, effClinic, interpret.specialty);
+  let doctors = await loadDoctors(pool, effClinic, interpret.specialty);
+  if (doctors.length === 0) {
+    doctors = await loadDoctors(pool, effClinic, null);
+  }
+  const combinedDoctorHint = ext.doctor_name_hint?.trim() || interpret.doctor_hint?.trim() || null;
+  if (doctors.length > 1 && combinedDoctorHint) {
+    const ix = pickDoctorIndexByHint(doctors, combinedDoctorHint);
+    if (ix != null) {
+      const doc = doctors.find((x) => x.ix === ix);
+      if (doc) {
+        const so = await slotOfferPayload(pool, crm, interpret.specialty, doc.doctor_id, timePrefActive);
+        return {
+          reply_text: so.reply,
+          finalIntent: "BOOKING",
+          finalPriority: 2,
+          decision_source: "dialogue_slots_ai_doctor_hint",
+          handoff_required: false,
+          dialogueMerge: so.merge,
+        };
+      }
+    }
+  }
+  const specToken = specialtySearchTokenFromText(bookingText, interpret.doctor_hint, interpret.specialty);
+  if (specToken) {
+    const matchedId = await findDoctorIdBySpecialtyOrNameToken(pool, effClinic, specToken);
+    if (matchedId != null) {
+      const so = await slotOfferPayload(pool, crm, interpret.specialty, matchedId, timePrefActive);
+      return {
+        reply_text: so.reply,
+        finalIntent: "BOOKING",
+        finalPriority: 2,
+        decision_source: "dialogue_slots_specialty_sql",
+        handoff_required: false,
+        dialogueMerge: so.merge,
+      };
+    }
+  }
   if (doctors.length > 1) {
     const lines = doctors.map((x) => `${x.ix}) ${x.display_name} (${x.specialty})`);
     return {

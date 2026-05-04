@@ -16,7 +16,7 @@ npm run dev
 ```
 
 - الواجهة: http://localhost:3001 (بعد الدخول: `/inbox`)
-- مستخدم تجريبي (بعد تشغيل `whatsapp-bridge/sql/seed-ops-admin.sql`): `ops@local.test` / `changeme`
+- مستخدم تجريبي: لا تعتمد أي credentials افتراضية. أنشئ/حدّث حساب المشغل يدويًا بكلمة مرور قوية.
 
 ## متغيرات البيئة
 
@@ -29,8 +29,22 @@ npm run dev
 | `WHATSAPP_ROUTING_CLINIC_IDS` | اختياري: قائمة `clinic_id` مفصولة بفواصل لمسار «اختر العيادة» على نفس رقم الواتساب (مثلاً `1,2,3`) |
 | `PATIENT_REPLY_WINDOW_MS` أو `PATIENT_REPLY_WINDOW_MINUTES` | نافذة «آخر رسالة واردة من المريض» للاستباقي (تذكير/تأخير/إعادة جدولة): يُنشأ صف واتساب فقط إذا كان آخر وارد ضمن النافذة **عند الإدراج**؛ ويُعاد التحقق عند `outbox-drain`؛ خارج النافذة → **HARD DROP** (`status = blocked`، لا تأجيل ولا دمج) (افتراضي 15 دقيقة) |
 | `WHATSAPP_KILL_SWITCH` | إذا `true`: يمنع كل إرسال واتساب **للمريض** (المسارات المتزامنة والاستباقية و`outbox-drain`)؛ **لا** يمنع تنبيهات الطاقم `staff_alert` |
-| `REDIS_URL` | اختياري: `redis://host:6379` — عند التعيين يُنشر حدث `InboundMessageRecorded` إلى Redis Stream بعد تخزين الوارد (انظر [docs/WORKER_SPLIT.md](../docs/WORKER_SPLIT.md)) |
+| `REDIS_URL` | اختياري: `redis://host:6379` — عند التعيين يُنشر حدث `InboundMessageRecorded` إلى Redis Stream بعد تخزين الوارد (انظر [docs/WORKER_SPLIT.md](../docs/WORKER_SPLIT.md))؛ وقفل الطابور الوارد + الطوابير (انظر [docs/REDIS_INBOUND_QUEUE_OPS.md](../docs/REDIS_INBOUND_QUEUE_OPS.md)) |
+| `INBOUND_PROCESSING_SHARDS` | عدد قوائم `inbound:processing:{shard}` للرؤية (افتراضي `8`) |
+| `INBOUND_WORKER_SHARD_START` / `INBOUND_WORKER_SHARD_END` | اختياري: نطاق شاردات يملكها هذا الـ worker (0..N-1) لتشغيل عدة عمليات بدون تضارب على نفس القائمة |
+| `INBOUND_FAIR_PATTERN` | اختياري: نمط الجدولة العادلة، مثل `1,1,2,1,2,3` (1=عالي،2=عادي،3=منخفض) |
+| `INBOUND_INTERPRET_FAST_PATH` | اضبط `false` لتعطيل مسار التفسير السريع (بدون Ollama عند `flow_step=idle` وغير URGENT) |
+| `INBOUND_CONV_CTX_CACHE` | اضبط `0` لتعطيل كاش Redis لسياق المحادثة (`conv:ctx:…`) |
+| `INBOUND_CONV_CTX_CACHE_TTL_SEC` | TTL لكاش السياق (افتراضي `45`) |
 | `REDIS_EVENTS_STREAM` | اسم الـ stream (افتراضي `ops:events:inbound`) |
+| `REDIS_CONSUMER_GROUP` | مجموعة المستهلكين لقياس `pending_count` في `GET /api/system/health/deep` (افتراضي `ops-core`) |
+| `HEALTH_DEEP_TOKEN` | اختياري: Bearer إضافي لمسار `GET /api/system/health/deep`؛ يُقبل أيضاً `SCHEDULING_SERVICE_TOKEN` إن وُجد |
+| `WHATSAPP_OPS_SEND_MAX_PER_WINDOW` | حد إرسال عبر الجسر لكل نافذة زمنية للعملية (افتراضي `10`) — انظر `lib/messaging/globalSendThrottle.ts` |
+| `WHATSAPP_OPS_SEND_WINDOW_MS` | عرض النافذة بالمللي ثانية (افتراضي `1000`) |
+| `OPS_WHATSAPP_PRIMARY_HANDLER` | اضبطه `ops` لتثبيت inbound production على ops-dashboard ومنع الازدواجية مع .NET |
+| `SYSTEM_MODE` | اختياري: يُسجَّل عند تشغيل الخادم (`instrumentation.ts`)، مثلاً `production` — لا يغيّر السلوك بعد إلا إذا رُبط لاحقاً بمزايا تجريبية |
+| `ALERT_WEBHOOK_URL` | اختياري: عند تجاوز عتبة `dead_letter_events` في آخر 5 دقائق، يُرسل `POST` JSON من مسار `health/deep` (قلّل تكرار الاستدعاء لتجنب إزعاج الويبهوك) |
+| `DEAD_LETTER_ALERT_THRESHOLD` | عدد صفوف `dead_letter_events` في 5 دقائق لتفعيل `degraded` + الويبهوك (افتراضي `5`) |
 | `REPLY_WINDOW_DEFER_MINUTES` | (قديم) لم يعد يُستخدم لتأجيل الصفوف؛ أبقِه فارغاً أو تجاهله |
 
 ## سياسة Reactive + Reply-only (واتساب للمريض)
@@ -40,6 +54,15 @@ npm run dev
 - **`patient_reply` في الصندوق:** يجب أن يحمل `payload` الحقول `patient_id`، `conversation_id`، `last_inbound_at`؛ وإلا يُحظر الصف.
 - **تنبيهات `urgent_alert`:** لرقم الطاقم؛ لا تخضع لنافذة المريض ولا لـ kill switch على مسار التنبيه.
 - **بث/حملات:** غير مدعومة؛ أنواع غير معروفة أو تسويقية → `blocked`.
+
+**`core_outbox` + `POST /api/internal/jobs/outbox-drain` (ملخص السلوك — انظر `lib/outbox/coreOutbox.ts`):**
+
+| الحالة | متى |
+|--------|-----|
+| `sent` | نجاح الإرسال عبر الجسر. |
+| `blocked` | HARD DROP / سياسة: بادئات مثل `kill_switch`، `no_last_inbound`، `outside_reply_window`، `policy_blocked` في `last_error`؛ أو نوع وظيفة غير مدعوم. |
+| `failed` | خطأ تشغيلي (مثلاً رفض الجسر) مع `attempts < 25`؛ يُعاد الجدولة بـ `available_at` backoff أسي مُحدود. |
+| `dead` | `attempts >= 25` بعد فشل إرسال؛ أو مسار `blocked` بدون عمود `blocked` في القاعدة (fallback `dead` + `blocked_fallback:`). |
 
 **قاعدة البيانات:** بعد `004_core_outbox_dialogue.sql` طبّق `005_core_outbox_blocked_status.sql` لإضافة حالة `blocked` إلى `core_outbox.status`. بدونها قد يُسجَّل الصف كـ `dead` مع بادئة `blocked_fallback:`.
 
@@ -63,6 +86,19 @@ npm run db:apply-outbox-blocked
 
 **مراقبة خفيفة:** `GET /api/internal/metrics/product` (Bearer `SCHEDULING_SERVICE_TOKEN`) — عدادات منتج + سياسة واتساب في الذاكرة.
 
+**Deep health (اعتماديات + تخلف الـ stream):** `GET /api/system/health/deep` — Bearer `HEALTH_DEEP_TOKEN` و/أو `SCHEDULING_SERVICE_TOKEN`. يتحقق من Postgres وRedis (`PING` + `XREVRANGE`/`XINFO GROUPS`) وجسر `GET /ready` ويعيد `lag_ms` و`stream_lag_ms` و`pending_count` و`dead_letter_events_5m` و`dead_letter_spike` (يتطلب هجرة `008_dead_letter_events.sql`).
+
+**قبل الإطلاق:** `npm run ops:go-live-preflight` (يتطلب `OPS_BASE_URL` + توكن) — انظر [`docs/E2E_PRODUCTION_TEST_RUNBOOK.md`](../docs/E2E_PRODUCTION_TEST_RUNBOOK.md) قسم *Final Go-Live Protocol*.
+  
+**بوابات Sprint 72h:**  
+- Day 2 Pilot: `npm run ops:pilot-day2`  
+- Day 3 Soft launch: `npm run ops:soft-launch-day3`
+
+**n8n pre-launch (سريع):**  
+- Env sanity: `npm run ops:n8n:env-sanity`  
+- Backup workflows: `npm run ops:n8n:backup-workflows`  
+- Smoke critical flows: `npm run ops:n8n:smoke-critical-flows`
+
 **SLO داخلي (مقترح):** الجسر `GET /ready` = 200؛ `outbox-drain` لا يعيد 500 متكرراً؛ فشل ويبهوك n8n يُرصَد في الجسر (`bridge_webhook_forward_fail_total`). راجع [whatsapp-bridge/RUNBOOK.md](../whatsapp-bridge/RUNBOOK.md).
 
 **أحداث مجال:** بعد `006_domain_events.sql` — `npm run db:replay-events -- --conversation=<id>`. إدراج `InboundMessageRecorded` تلقائي مع الوارد غير المكرر.
@@ -73,6 +109,8 @@ npm run db:apply-outbox-blocked
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build ops-dashboard
+# consumer اختياري (Phase A — fan-out فقط، يحتاج DATABASE_URL + هجرات 007/008):
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build event-consumer
 ```
 
 ## تجزئة كلمة مرور مستخدم جديد
@@ -87,6 +125,7 @@ npm run hash-password -- "your-password"
 
 - **مسارات داخلية (Bearer `SCHEDULING_SERVICE_TOKEN`)**:  
   `POST /api/internal/conversations/process-inbound` (مسار موحّد: تطبيع + CRM + قرار الحجز + حالة الحوار + إرسال عبر الجسر) ·  
+  `POST /api/internal/trial/signup` (إنشاء clinic + trial subscription + admin + welcome hooks) ·  
   `POST /api/internal/jobs/outbox-drain` (تفريغ `core_outbox`؛ **reactive + HARD DROP** — صفوف خارج السياسة تُنهى بـ `blocked`؛ يحدّث `reminder_sent_at` بعد إرسال ناجح) ·  
   `POST /api/internal/scheduling/late-due` (مواعيد تأخرت + تنبيه واتساب عبر `core_outbox`) ·  
   `POST /api/internal/crm/inbound-ingest` (ما زال متاحاً للمسارات القديمة) ·  
@@ -96,6 +135,9 @@ npm run hash-password -- "your-password"
 
 - **واجهات**: `/secretary` (صلاحية `secretary` أو `admin`) — جلسة المتصفح: `POST /api/secretary/manual`، `POST /api/secretary/appointments/[id]/cancel`، `POST /api/secretary/appointments/[id]/reschedule` (جسم JSON `{ "starts_at": "<ISO>" }`)، إلخ. `/doctor` (صلاحية `doctor` أو `admin` — يتطلب ربط `doctors.staff_user_id`).
 - **n8n**: عقدة **Scheduling Engine** في `whatsapp-bridge/n8n-workflow-whatsapp-local.json` تستدعي الـ API أعلاه (متغيرات `OPS_DASHBOARD_URL` و `SCHEDULING_SERVICE_TOKEN` على حاوية n8n).
+- **Billing reminders automation**: تمت إضافة خدمة `billing-reminders-job` في `docker-compose.prod.yml` و`docker-compose.clinic.yml` لتشغيل دوري يستدعي:
+  `POST /api/internal/billing/reminders/run` كل `BILLING_REMINDER_INTERVAL_SECONDS` (افتراضي 900 ثانية = 15 دقيقة).  
+  تتطلب `SCHEDULING_SERVICE_TOKEN` صالح.
 
 ## دمج المنتج الرئيسي
 

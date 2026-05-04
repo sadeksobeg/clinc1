@@ -74,7 +74,13 @@ export async function POST(req: Request) {
                   : null;
               return { kind: "patient_proactive" as const, lastInboundAt: lastAt };
             })();
-      const r = await messaging.send({ to, text, policy: bridgePolicy, correlationId });
+      const r = await messaging.send({
+        to,
+        text,
+        policy: bridgePolicy,
+        correlationId,
+        clinicId: row.clinic_id,
+      });
       if (r.ok) {
         await markOutboxSent(pool, row.id);
         const mid = row.payload.mark_reminder_after_send;

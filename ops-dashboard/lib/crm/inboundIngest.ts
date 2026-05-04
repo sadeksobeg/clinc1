@@ -1,5 +1,14 @@
 import type { Pool, PoolClient } from "pg";
 
+function normalizePhoneIdentity(raw: string): string {
+  const t = (raw || "").trim();
+  if (!t) return "";
+  const plusPrefixed = t.startsWith("+");
+  const digits = t.replace(/\D+/g, "");
+  if (!digits) return "";
+  return `${plusPrefixed ? "+" : ""}${digits}`.slice(0, 32);
+}
+
 export type InboundIngestInput = {
   clinic_id: number;
   from: string;
@@ -23,6 +32,8 @@ export type InboundIngestRow = {
   clinic_id: number;
   patient_id: number;
   patient_status: string;
+  /** Patient display name if set (may be null for new WhatsApp users). */
+  patient_display_name: string | null;
   conversation_id: number;
   inbound_message_id: number;
   conversation_state: string;
@@ -64,24 +75,42 @@ export async function crmUpsertInboundCore(client: PoolClient, p: InboundIngestI
   const workflowStartedAt = p.workflowStartedAt ?? Date.now();
   const clinicId = p.clinic_id;
   const chatId = p.from.trim();
+  // Important: WhatsApp chat_id is not a real E.164 phone number.
+  // We store the raw chat_id and derive WhatsApp digits in the UI/API when needed.
+  const phoneIdentity = "";
   const messageId = (p.messageId || "").trim() || null;
   const messageSource = (p.messageSource || "n8n").slice(0, 64);
 
-  const dup = await client.query(`SELECT id FROM messages WHERE clinic_id = $1 AND dedupe_hash = $2 LIMIT 1`, [
+  const dedupeDup = await client.query(`SELECT id FROM messages WHERE clinic_id = $1 AND dedupe_hash = $2 LIMIT 1`, [
     clinicId,
     p.dedupeHash,
   ]);
-  const isDuplicate = Boolean(dup.rows[0]);
+  let duplicateMsgId: number | null = dedupeDup.rows[0] ? Number((dedupeDup.rows[0] as { id: unknown }).id) : null;
+  if (duplicateMsgId == null && messageId && String(messageId).trim()) {
+    const midDup = await client.query(`SELECT id FROM messages WHERE clinic_id = $1 AND message_id = $2 LIMIT 1`, [
+      clinicId,
+      String(messageId).trim(),
+    ]);
+    if (midDup.rows[0]) duplicateMsgId = Number((midDup.rows[0] as { id: unknown }).id);
+  }
+  const isDuplicate = duplicateMsgId != null;
 
   const pat = await client.query(
-    `INSERT INTO patients (clinic_id, chat_id, status, first_seen_at, last_seen_at, updated_at)
-     VALUES ($1, $2, 'new', NOW(), NOW(), NOW())
-     ON CONFLICT (clinic_id, chat_id) DO UPDATE SET last_seen_at = NOW(), updated_at = NOW()
-     RETURNING id, status`,
-    [clinicId, chatId],
+    `INSERT INTO patients (clinic_id, chat_id, phone_e164, status, first_seen_at, last_seen_at, updated_at)
+     VALUES ($1, $2, $3, 'new', NOW(), NOW(), NOW())
+     ON CONFLICT (clinic_id, chat_id) DO UPDATE SET
+       last_seen_at = NOW(),
+       updated_at = NOW(),
+       phone_e164 = COALESCE(NULLIF(patients.phone_e164, ''), EXCLUDED.phone_e164)
+     RETURNING id, status, display_name`,
+    [clinicId, chatId, phoneIdentity || null],
   );
   const patientId = Number(pat.rows[0].id);
   const patientStatus = String(pat.rows[0].status);
+  const patientDisplayName =
+    pat.rows[0].display_name != null && String(pat.rows[0].display_name).trim()
+      ? String(pat.rows[0].display_name).trim()
+      : null;
 
   const activeConv = await client.query(
     `SELECT c.id, c.state
@@ -111,7 +140,7 @@ export async function crmUpsertInboundCore(client: PoolClient, p: InboundIngestI
 
   let inboundMessageId: number;
   if (isDuplicate) {
-    inboundMessageId = Number(dup.rows[0].id);
+    inboundMessageId = duplicateMsgId!;
   } else {
     const insMsg = await client.query(
       `INSERT INTO messages (
@@ -144,6 +173,7 @@ export async function crmUpsertInboundCore(client: PoolClient, p: InboundIngestI
     clinic_id: clinicId,
     patient_id: patientId,
     patient_status: patientStatus,
+    patient_display_name: patientDisplayName,
     conversation_id: conversationId,
     inbound_message_id: inboundMessageId,
     conversation_state: conversationState,

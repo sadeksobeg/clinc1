@@ -8,6 +8,7 @@ export type FlowStep =
   | "choose_doctor"
   | "slot_offer"
   | "awaiting_confirm"
+  | "awaiting_display_name"
   | "done";
 
 export type PendingSlotOffer = {
@@ -35,6 +36,10 @@ export type DialogueTimePref = "morning" | "afternoon" | "any";
 
 export type StoredDialogueState = {
   flow_step: FlowStep;
+  /** When flow_step is awaiting_display_name — which field we collect. */
+  collect_field?: "display_name" | null;
+  /** After name is saved, continue to doctor list or other step. */
+  resume_after_name?: "doctors" | null;
   pending_kind?: "slots" | "doctors" | "clinics" | null;
   pending_slots?: PendingSlotOffer[];
   pending_doctors?: PendingDoctorPick[];
@@ -44,6 +49,8 @@ export type StoredDialogueState = {
   /** Increments when list parsing fails in an interactive step; threshold triggers human handoff. */
   consecutive_unparsed?: number;
   time_pref?: DialogueTimePref | null;
+  /** Slot list pagination for "مواعيد أخرى" in slot_offer. */
+  slot_page?: number;
   updated_at?: string;
 };
 

@@ -1,0 +1,526 @@
+PLATFORM UI ENGINEERING REPORT (P8.2 + P8.3)
+Repo: d:\Sadek Company\Mid Auto
+Date: 2026-04-26
+Scope: apps/web Platform Console (/platform/*) + supporting BFF + ops-dashboard internal APIs used by the console
+
+================================================================================
+1) Executive Summary
+================================================================================
+This codebase now has a dedicated Platform Console for platform-scoped users (primarily super_admin, plus ops_admin/ops_manager when enabled).
+
+Platform Console goals:
+- Keep super_admin in a platform-first cockpit (no clinic shell by default).
+- Provide global visibility: clinics, revenue, support, search, alerts, audit, and growth.
+- Provide safe global control: lifecycle actions (suspend/activate/plan/owner/trial-days) and clinic context switching.
+
+Current status:
+- Platform routes exist and build cleanly (apps/web build + ops-dashboard build).
+- Platform navigation is separated from clinic navigation.
+- Platform pages fetch via BFF routes in apps/web, which proxy to ops-dashboard internal APIs.
+- Platform writes are guarded (super_admin scope required for BFF write routes).
+
+================================================================================
+2) System Architecture (High-level)
+================================================================================
+Components:
+1) apps/web (Next.js 14 app) — "SaaS Web + Platform Console" (Port 3000)
+   - Contains UI pages for clinic scope and platform scope.
+   - Contains BFF endpoints under /api/* that proxy to ops-dashboard internal APIs.
+   - Enforces session/scope rules in middleware and API guards.
+
+2) ops-dashboard (Next.js 14 app) — "Ops + Internal APIs" (Port 3001)
+   - Contains /api/internal/* endpoints that implement data and operational actions.
+   - Contains auth login with special handling for super_admin (2FA + IP allowlist).
+   - Contains DB access and audit log writes.
+
+3) whatsapp-bridge — messaging bridge + shared DB migrations
+
+Platform Console data flow:
+Browser -> apps/web (UI page) -> apps/web (BFF /api/platform/* or /api/ops/*)
+-> ops-dashboard (/api/internal/*) -> DB
+
+Mermaid flow:
+
+flowchart LR
+  Browser -->|UI requests| WebApp[apps/web]
+  WebApp -->|BFF proxy| Ops[ops-dashboard]
+  Ops -->|SQL queries| DB[(Postgres)]
+
+================================================================================
+3) Platform Routing & Navigation
+================================================================================
+
+3.1 Default entry for platform users
+- Desired behavior: platform users should land in /platform, not /dashboard.
+- Enforced via apps/web middleware (already in place from P8.2 work).
+
+3.2 Platform sidebar navigation
+File:
+- apps/web/lib/platform-navigation.ts
+
+Navigation entries (current):
+- /platform                Platform Dashboard
+- /platform/alerts         Alerts Center (Ops + Billing signals)
+- /platform/growth         Growth (trial funnel + revenue counts)
+- /platform/clinics        Clinics (overview + lifecycle actions)
+- /platform/revenue        Revenue Center
+- /platform/support        Global Support Queue
+- /platform/search         Cross-clinic Search
+- /platform/audit          Audit Explorer
+- /ops-center              Ops Center (system operations)
+- /admin                   Admin Panel (internal)
+- /platform/settings       Platform settings placeholder
+
+3.3 Chrome behavior
+File:
+- apps/web/components/layout/AppChrome.tsx
+
+Key behaviors:
+- Switches between clinic navigation and platform navigation based on:
+  - session scope (platform vs clinic)
+  - current pathname (/platform/* implies platform nav)
+- Skips tenant-scoped API calls when platform user is in "global mode" (no acting clinic).
+
+================================================================================
+4) Authentication, Session, and Scope Model
+================================================================================
+
+4.1 JWT/session fields
+ops-dashboard signs ops_session JWT with payload:
+- role
+- scope: "clinic" | "platform"
+- clinicId (only for clinic scope)
+- billingStatus/billingLocked hints
+
+File:
+- ops-dashboard/lib/jwt.ts
+
+4.2 Login behaviors
+File:
+- ops-dashboard/app/api/auth/login/route.ts
+
+Rules:
+- Regular clinic users: scope=clinic, clinicId set, billing snapshot computed.
+- super_admin:
+  - Forced security checks:
+    - IP allowlist enforced
+    - MFA/TOTP enforced
+  - Token scope becomes platform (scope=platform) when platform scope is enabled.
+- Delegation (P8.3 enhancement):
+  - ops_admin and ops_manager can also receive scope=platform IF:
+    - staff_users.security_flags.platform_scope === true
+  - This enables delegated platform access without using super_admin.
+
+4.3 apps/web session parsing
+File:
+- apps/web/lib/webAuth.ts
+
+Behavior:
+- Accepts platform scope sessions (clinic_id becomes 0 for platform).
+- Previously platform acceptance was restricted to super_admin; now any scope=platform is treated as platform session.
+
+4.4 Session endpoint (apps/web)
+File:
+- apps/web/app/api/auth/me/route.ts
+
+Behavior:
+- If sessionScope === "platform": returns clinic_id=0 and billing unlocked.
+- Otherwise: attempts to validate billing lock via ops-dashboard /api/auth/billing-lock.
+
+================================================================================
+5) Platform Context Switching (Impersonation Model)
+================================================================================
+
+Goal:
+- Platform user can "enter clinic" context to use clinic-scoped modules safely.
+- Platform global mode (no acting clinic) should not trigger tenant endpoints.
+
+Mechanism:
+- apps/web uses /api/platform/context to manage platform_acting_clinic_id cookie
+  (already present from P8.2).
+
+Files:
+- apps/web/app/api/platform/context/route.ts
+- ops-dashboard/app/api/internal/platform/context/events/route.ts
+
+Notes:
+- Platform pages primarily operate without acting clinic.
+- Clinic-specific pages require acting clinic to be set (or will redirect/deny).
+
+================================================================================
+6) Platform Pages Inventory (UI)
+================================================================================
+
+All paths below are in apps/web under:
+- apps/web/app/(app)/platform/*
+
+6.1 /platform (Platform Dashboard)
+File:
+- apps/web/app/(app)/platform/page.tsx
+
+Purpose:
+- Global KPIs summary. Phase 1 uses LocalOpsRevenueProvider (ops local billing).
+
+Data sources:
+- apps/web/lib/platform/providers/revenueProvider.ts (LocalOpsRevenueProvider)
+- BFF -> /api/ops/billing/admin/revenue
+
+Primary outputs (typical):
+- active/trial/locked clinic counts
+- projected MRR (phase 1)
+
+6.2 /platform/clinics (Clinics Management)
+File:
+- apps/web/app/(app)/platform/clinics/page.tsx
+
+Purpose:
+- Clinic overview list (name/id/status/estimated monthly) + lifecycle actions.
+
+Read data:
+- /api/platform/clinics/overview (BFF aggregator)
+File:
+- apps/web/app/api/platform/clinics/overview/route.ts
+
+Write actions:
+- /api/platform/clinics/[id]/lifecycle (BFF)
+File:
+- apps/web/app/api/platform/clinics/[id]/lifecycle/route.ts
+
+Upstream write implementation:
+- ops-dashboard/app/api/internal/platform/clinics/[id]/lifecycle/route.ts
+
+Supported lifecycle actions:
+- suspend: sets clinic_local_subscriptions.status='suspended' + reason
+- activate: sets status='active' (and renewal defaults)
+- set_trial_days: sets status='trial' and adjusts trial_ends_at
+- set_plan: updates base_price_usd/included_doctors/extra_doctor_price_usd and metadata.billing_plan
+- set_owner: updates clinics.metadata owner fields
+
+Security:
+- BFF requires requireUserSession + role super_admin + scope platform.
+- ops-dashboard internal lifecycle requires x-platform-scope header true.
+
+6.3 /platform/revenue (Revenue Center)
+File:
+- apps/web/app/(app)/platform/revenue/page.tsx
+
+Purpose:
+- Revenue KPIs: MRR/requests/failure states per clinic and summary.
+
+Data sources:
+- LocalOpsRevenueProvider -> /api/ops/billing/admin/revenue
+
+Phase 1 billing source of truth:
+- Local-market billing tables (clinic_local_subscriptions + clinic_payment_requests)
+  defined in migrations like whatsapp-bridge/sql/migrations/013_manual_billing_local.sql
+  and lifecycle extension in whatsapp-bridge/sql/migrations/026_billing_lifecycle_states.sql
+
+6.4 /platform/support (Global Support Center)
+File:
+- apps/web/app/(app)/platform/support/page.tsx
+
+Purpose:
+- One global queue of support tickets for all clinics.
+
+Data sources:
+- apps/web BFF -> /api/ops/support/tickets
+- ops-dashboard internal support endpoint enhanced for platform queries:
+  - ops-dashboard/app/api/internal/support/tickets/route.ts
+  - When platform scope (x-platform-scope) and no x-clinic-id, returns clinic_id & clinic_name.
+
+6.5 /platform/search (Cross-clinic Search)
+File:
+- apps/web/app/(app)/platform/search/page.tsx
+
+Purpose:
+- Search across clinics/patients/conversations/payment requests.
+
+Data sources:
+- apps/web/app/api/platform/search/route.ts (BFF)
+- ops-dashboard/app/api/internal/platform/search/route.ts (internal)
+
+Typical result buckets:
+- clinics
+- patients
+- conversations
+- payment_requests
+
+Actions:
+- "Enter clinic" button sets platform context (acting_clinic_id) via /api/platform/context.
+
+6.6 /platform/alerts (Alert Center)
+File:
+- apps/web/app/(app)/platform/alerts/page.tsx
+
+Purpose:
+- Operational alert aggregation for platform users.
+
+Data sources:
+- /api/ops/system/health
+- /api/ops/system/failures
+- /api/ops/billing/admin/revenue
+
+Outputs:
+- severity levels: critical/warning/info
+- key risk signals:
+  - DB health + latency
+  - WhatsApp send disabled / circuit breaker risk
+  - dead jobs in last 24h
+  - webhook failures
+  - overdue payment requests, locked clinics
+
+6.7 /platform/audit (Audit Explorer)
+File:
+- apps/web/app/(app)/platform/audit/page.tsx
+
+Purpose:
+- Explorer for audit logs across all clinics or a specific clinic.
+
+Data sources:
+- apps/web/app/api/platform/audit/route.ts (BFF)
+- ops-dashboard/app/api/internal/audit/actions/route.ts (internal)
+
+Important behavior change:
+- ops internal audit endpoint now supports platform scope:
+  - If x-platform-scope=true and clinic_id=0 => returns cross-clinic logs.
+
+6.8 /platform/growth (Growth Dashboard)
+File:
+- apps/web/app/(app)/platform/growth/page.tsx
+
+Purpose:
+- Basic growth signals (Phase 1):
+  - trial funnel last 24h
+  - active/trial/locked counts
+  - pending/overdue requests counts
+
+Data sources:
+- /api/ops/analytics/trial-funnel
+- /api/ops/billing/admin/revenue
+
+6.9 /platform/settings (Placeholder)
+File:
+- apps/web/app/(app)/platform/settings/page.tsx
+
+Purpose:
+- Placeholder for future platform policies and limits.
+
+================================================================================
+7) Platform BFF API Surface (apps/web)
+================================================================================
+
+Platform-specific BFF routes (apps/web):
+- GET  /api/platform/clinics/overview
+  - Aggregates clinic list + revenue summary per clinic (Phase 1)
+
+- POST /api/platform/clinics/[id]/lifecycle
+  - Proxies lifecycle changes to ops-dashboard internal platform lifecycle endpoint
+  - super_admin(platform) only
+
+- GET  /api/platform/search
+  - Proxies to ops-dashboard global search
+
+- GET  /api/platform/audit
+  - Proxies to ops-dashboard audit actions with clinic_id=0 default
+
+Related BFF routes used by platform pages (shared /api/ops/*):
+- /api/ops/billing/admin/revenue
+- /api/ops/system/health
+- /api/ops/system/failures
+- /api/ops/support/tickets
+- /api/ops/analytics/trial-funnel
+
+Core helper:
+- apps/web/lib/secure-api.ts
+  - callOpsApi: sets headers like x-platform-scope and x-clinic-id based on session and acting context
+  - requireUserSession / requireUserWithClinic: guards for auth and tenant scoping
+
+================================================================================
+8) Data Model & Tables (Relevant to Platform Console)
+================================================================================
+
+Clinic entity:
+- clinics
+  - metadata jsonb includes:
+    - owner_name
+    - owner_whatsapp
+    - specialty/city
+    - onboarding flags
+
+Local billing:
+- clinic_local_subscriptions
+  - status: trial/trial_expiring/trial_expired/active/past_due/grace/suspended/cancelled
+  - trial_started_at/trial_ends_at
+  - next_renewal_at
+  - base_price_usd/included_doctors/extra_doctor_price_usd
+  - suspension_reason/suspended_at
+  - metadata includes billing_plan and onboarding limits
+
+- clinic_payment_requests
+  - request_type (activation/renewal)
+  - payment_method
+  - amount_usd
+  - status (pending/approved/rejected/cancelled)
+
+Audit:
+- audit_logs
+  - clinic_id (nullable/0 in some platform cases, but generally per clinic)
+  - actor_type/actor_id
+  - action/entity_type/entity_id
+  - payload jsonb
+
+Support:
+- internal support tickets tables (via ops internal API)
+
+================================================================================
+9) Security Engineering & Guardrails
+================================================================================
+
+9.1 super_admin security (ops-dashboard)
+- IP allowlist required:
+  - user_ip_allowlist entries must match request IP
+- MFA required:
+  - user_mfa_secrets must exist and otp_code must verify
+
+Files:
+- ops-dashboard/app/api/auth/login/route.ts
+- whatsapp-bridge/sql/migrations/036_super_admin_security.sql
+- ops-dashboard/scripts/seed-super-admin.cjs
+- ops-dashboard/scripts/super-admin-allowlist.cjs
+
+9.2 Platform writes safety
+- All platform write actions currently routed through:
+  - apps/web BFF routes that check platform session and super_admin role
+  - ops-dashboard internal routes that require x-platform-scope=true (scheduling service token auth)
+
+9.3 Multi-tenancy protections
+- Tenant-scoped endpoints require clinic_id, and platform global mode avoids them.
+- Hardcoded clinic_id=1 in manual billing UI was removed earlier (P8.2).
+
+================================================================================
+10) Operational Readiness Notes
+================================================================================
+
+Build verification:
+- npm run build:web  => PASS
+- npm run build:ops  => PASS
+
+Dev runtime caveat:
+- If Next dev shows MODULE_NOT_FOUND for a .next chunk:
+  - Clear apps/web/.next
+  - Ensure only one process holds port 3000
+
+Runbook reference:
+- docs/operations/P6_RUNBOOK.md contains ops health endpoints and incident controls.
+
+Smoke script:
+- scripts/p8-super-admin-smoke.mjs (updated for platform login variables)
+  - Note: super_admin automation may fail if OTP/IP allowlist not configured.
+
+================================================================================
+11) Known Limitations / Remaining Work (Engineering Gaps)
+================================================================================
+
+Clinics lifecycle coverage (current implementation):
+- Implemented: suspend, activate, trial_days, plan, owner metadata.
+- Not yet implemented:
+  - clinic deletion (safe delete)
+  - change staff ownership user row (transfer admin user)
+  - quotas/limits enforcement UI (doctors_count vs plan limits)
+
+Growth analytics:
+- Phase 1 uses trial funnel and billing summary counts only.
+- No CAC/LTV, no cohort retention, no churn root-cause analysis yet.
+
+Alerts:
+- Phase 1 is UI aggregation of existing endpoints.
+- No alert routing/escalation policies, no persistence/ack state.
+
+Audit Explorer:
+- Phase 1 viewer.
+- Needs richer filters (actor, action, time range), export, and IP/session context display if available.
+
+Delegation:
+- Platform scope enabled by security_flags.platform_scope for ops_admin/ops_manager.
+- Fine-grained RBAC per module (Support-only vs Billing-only) is not yet enforced at UI/action level.
+
+================================================================================
+12) File Index (Most Relevant Files)
+================================================================================
+
+apps/web UI:
+- apps/web/app/(app)/platform/page.tsx
+- apps/web/app/(app)/platform/clinics/page.tsx
+- apps/web/app/(app)/platform/revenue/page.tsx
+- apps/web/app/(app)/platform/support/page.tsx
+- apps/web/app/(app)/platform/search/page.tsx
+- apps/web/app/(app)/platform/alerts/page.tsx
+- apps/web/app/(app)/platform/audit/page.tsx
+- apps/web/app/(app)/platform/growth/page.tsx
+- apps/web/app/(app)/platform/settings/page.tsx
+
+apps/web navigation + auth:
+- apps/web/lib/platform-navigation.ts
+- apps/web/components/layout/AppChrome.tsx
+- apps/web/lib/webAuth.ts
+- apps/web/lib/secure-api.ts
+- apps/web/app/api/auth/me/route.ts
+
+apps/web BFF platform:
+- apps/web/app/api/platform/clinics/overview/route.ts
+- apps/web/app/api/platform/clinics/[id]/lifecycle/route.ts
+- apps/web/app/api/platform/search/route.ts
+- apps/web/app/api/platform/audit/route.ts
+- apps/web/app/api/platform/context/route.ts
+
+ops-dashboard internal APIs:
+- ops-dashboard/app/api/internal/platform/search/route.ts
+- ops-dashboard/app/api/internal/platform/clinics/[id]/lifecycle/route.ts
+- ops-dashboard/app/api/internal/audit/actions/route.ts
+- ops-dashboard/app/api/internal/support/tickets/route.ts
+
+ops-dashboard auth + security:
+- ops-dashboard/app/api/auth/login/route.ts
+- ops-dashboard/scripts/seed-super-admin.cjs
+- ops-dashboard/scripts/super-admin-allowlist.cjs
+- whatsapp-bridge/sql/migrations/036_super_admin_security.sql
+
+================================================================================
+13) How to Validate Platform Console Manually (Quick Checklist)
+================================================================================
+
+Prereqs:
+- apps/web on 3000
+- ops-dashboard on 3001
+
+1) Login as super_admin (platform):
+- Ensure allowlist and MFA configured
+- Login via apps/web /login
+
+2) Open /platform:
+- Confirm no clinic shell load by default
+- Confirm platform sidebar entries visible
+
+3) Clinics actions:
+- /platform/clinics
+- Click Activate/Suspend and confirm status updates (refresh list)
+
+4) Alerts:
+- /platform/alerts
+- Confirm health + failures + billing summary load
+
+5) Audit:
+- /platform/audit
+- Try clinic_id=0 (all) then a specific clinic id
+
+6) Growth:
+- /platform/growth
+- Confirm trial funnel endpoint returns data
+
+7) Search:
+- /platform/search
+- Query by phone/name and verify results and "Enter clinic" action.
+
+================================================================================
+End of report
+

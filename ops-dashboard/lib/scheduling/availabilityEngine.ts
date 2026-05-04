@@ -41,8 +41,16 @@ export function pickFirstFreeSlots(
   slotMinutes: number,
   busyUtc: BusyInterval[],
   maxSlots: number,
+  nowUtc: DateTime = DateTime.utc(),
+  minLeadMinutes = 2,
 ): { startUtc: DateTime; endUtc: DateTime }[] {
   const picked: { startUtc: DateTime; endUtc: DateTime }[] = [];
+  const nowLocal = nowUtc.setZone(zone);
+  const minStartLocal = nowLocal.plus({ minutes: minLeadMinutes });
+  const busyInZone = busyUtc.map((b) => ({
+    start: b.start.setZone(zone),
+    end: b.end.setZone(zone),
+  }));
   for (const day of localDays) {
     const wd = day.weekday % 7;
     const wh = weekdayToHours.get(wd);
@@ -50,11 +58,9 @@ export function pickFirstFreeSlots(
     const starts = iterateLocalSlots(zone, day, wh.opens, wh.closes, slotMinutes);
     for (const st of starts) {
       const en = st.plus({ minutes: slotMinutes });
-      const busyInZone = busyUtc.map((b) => ({
-        start: b.start.setZone(zone),
-        end: b.end.setZone(zone),
-      }));
-      if (intervalOverlapsBusy(st, en, busyInZone.map((x) => ({ start: x.start, end: x.end })))) continue;
+      // Never offer a slot in the past (or too close) in local clinic time.
+      if (st < minStartLocal) continue;
+      if (intervalOverlapsBusy(st, en, busyInZone)) continue;
       picked.push({ startUtc: st.toUTC(), endUtc: en.toUTC() });
       if (picked.length >= maxSlots) return picked;
     }

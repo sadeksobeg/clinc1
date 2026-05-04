@@ -33,4 +33,17 @@ describe("parseDialogueState", () => {
     const d = parseDialogueState({ flow_step: "idle" });
     expect(d.consecutive_unparsed).toBe(0);
   });
+
+  it("parses awaiting_display_name + resume_after_name", () => {
+    const d = parseDialogueState({
+      flow_step: "awaiting_display_name",
+      collect_field: "display_name",
+      resume_after_name: "doctors",
+      hub_clinic_id: 2,
+    });
+    expect(d.flow_step).toBe("awaiting_display_name");
+    expect(d.collect_field).toBe("display_name");
+    expect(d.resume_after_name).toBe("doctors");
+    expect(d.hub_clinic_id).toBe(2);
+  });
 });

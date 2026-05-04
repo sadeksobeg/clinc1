@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { assertSchedulingServiceToken } from "@/lib/internalAuth";
+import { hasIdempotentAudit, insertAuditLog } from "@/lib/auditTrail";
 
 const patchSchema = z.object({
   clinic_id: z.number().int().positive(),
@@ -9,11 +10,13 @@ const patchSchema = z.object({
   starts_at: z.string().min(10).optional(),
   ends_at: z.string().min(10).optional(),
   patient_arrival_state: z.enum(["expected", "late", "checked_in", "no_show"]).optional(),
+  idempotency_key: z.string().max(200).optional(),
 });
 
 type Ctx = { params: { id: string } };
 
 export async function PATCH(req: Request, ctx: Ctx) {
+  const startedAt = Date.now();
   const auth = assertSchedulingServiceToken(req);
   if (auth) return auth;
   const id = Number(ctx.params.id);
@@ -32,20 +35,60 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   const b = parsed.data;
   const pool = getPool();
-  const r = await pool.query(
-    `UPDATE appointments SET
-       status = COALESCE($1::text, status),
-       cancelled_at = CASE WHEN $1::text = 'cancelled' THEN COALESCE(cancelled_at, NOW()) ELSE cancelled_at END,
-       starts_at = COALESCE($2::timestamptz, starts_at),
-       ends_at = COALESCE($3::timestamptz, ends_at),
-       patient_arrival_state = COALESCE($4::text, patient_arrival_state),
-       updated_at = NOW()
-     WHERE id = $5 AND clinic_id = $6 AND deleted_at IS NULL
-     RETURNING id, status, starts_at, ends_at, patient_arrival_state`,
-    [b.status ?? null, b.starts_at ?? null, b.ends_at ?? null, b.patient_arrival_state ?? null, id, b.clinic_id],
-  );
-  if (!r.rows[0]) {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  try {
+    const idem = b.idempotency_key?.trim() || null;
+    if (idem) {
+      const seen = await hasIdempotentAudit(pool, {
+        clinicId: b.clinic_id,
+        action: "appointment.patch",
+        entityId: String(id),
+        idempotencyKey: idem,
+      });
+      if (seen) return NextResponse.json({ ok: true, duplicate: true });
+    }
+    const r = await pool.query(
+      `UPDATE appointments SET
+         status = COALESCE($1::text, status),
+         cancelled_at = CASE WHEN $1::text = 'cancelled' THEN COALESCE(cancelled_at, NOW()) ELSE cancelled_at END,
+         starts_at = COALESCE($2::timestamptz, starts_at),
+         ends_at = COALESCE($3::timestamptz, ends_at),
+         patient_arrival_state = COALESCE($4::text, patient_arrival_state),
+         updated_at = NOW()
+       WHERE id = $5 AND clinic_id = $6 AND deleted_at IS NULL
+       RETURNING id, status, starts_at, ends_at, patient_arrival_state`,
+      [b.status ?? null, b.starts_at ?? null, b.ends_at ?? null, b.patient_arrival_state ?? null, id, b.clinic_id],
+    );
+    if (!r.rows[0]) {
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    }
+    await insertAuditLog(pool, {
+      clinicId: b.clinic_id,
+      action: "appointment.patch",
+      entityType: "appointment",
+      entityId: String(id),
+      payload: {
+        ok: true,
+        status: b.status ?? null,
+        starts_at: b.starts_at ?? null,
+        ends_at: b.ends_at ?? null,
+        patient_arrival_state: b.patient_arrival_state ?? null,
+        idempotency_key: b.idempotency_key ?? null,
+        duration_ms: Date.now() - startedAt,
+      },
+    });
+    return NextResponse.json({ ok: true, appointment: r.rows[0] });
+  } catch {
+    await insertAuditLog(pool, {
+      clinicId: b.clinic_id,
+      action: "appointment.patch",
+      entityType: "appointment",
+      entityId: String(id),
+      payload: {
+        ok: false,
+        idempotency_key: b.idempotency_key ?? null,
+        duration_ms: Date.now() - startedAt,
+      },
+    }).catch(() => undefined);
+    return NextResponse.json({ ok: false, error: "internal_error" }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, appointment: r.rows[0] });
 }

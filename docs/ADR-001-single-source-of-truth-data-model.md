@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (directional) — **implementation in progress**; this ADR records the decision to converge.
+Accepted — launch freeze adopts `ops-dashboard + PostgreSQL` as production source-of-truth for inbound CRM/scheduling flows.
 
 ## Context
 
@@ -16,8 +16,9 @@ Using both against the **same** database without strict coordination risks drift
 ## Decision
 
 1. **One database schema per environment** for production: either the ops path SQL **or** the EF path must own migrations; the other consumes via the same migration history or a **read-only** replica of the same logical model.
-2. **Short term (implemented in this iteration):** CRM **inbound upsert** that previously lived as raw SQL inside n8n is moved to **ops-dashboard** (`/api/internal/crm/inbound-ingest`) with **parameterized** queries, reducing SQL-in-n8n surface area while keeping one Postgres database for the ops stack.
-3. **Medium term:** Pick **one** migration owner (recommended: **EF Core** if ClinicSaaS.Api is the commercial core, or **SQL** if ops-first). Generate the other from exports or retire the duplicate product path.
+2. **Short term (implemented):** CRM **inbound upsert** that previously lived as raw SQL inside n8n is moved to **ops-dashboard** (`/api/internal/crm/inbound-ingest`) with **parameterized** queries, reducing SQL-in-n8n surface area while keeping one Postgres database for the ops stack.
+3. **Launch freeze:** inbound decisions and writes are owned by the ops SQL path. `.NET` webhook inbound must be disabled when `OPS_WHATSAPP_PRIMARY_HANDLER=ops`.
+4. **Medium term:** pick one migration owner permanently (EF or SQL) and retire the duplicate path.
 
 ## Consequences
 

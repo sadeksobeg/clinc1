@@ -4,6 +4,7 @@ import { getPool } from "@/lib/db";
 import { assertSchedulingServiceToken } from "@/lib/internalAuth";
 import { opsLogError } from "@/lib/opsLog";
 import { confirmAppointment } from "@/lib/scheduling/appointmentService";
+import { insertAuditLog } from "@/lib/auditTrail";
 
 const bodySchema = z.object({
   clinic_id: z.number().int().positive(),
@@ -15,6 +16,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
+  const startedAt = Date.now();
   const auth = assertSchedulingServiceToken(req);
   if (auth) return auth;
   let json: unknown;
@@ -39,11 +41,40 @@ export async function POST(req: Request) {
       sourceChannel: "whatsapp",
     });
     if (!res.ok) {
+      await insertAuditLog(pool, {
+        clinicId: parsed.data.clinic_id,
+        action: "appointment.create",
+        entityType: "appointment",
+        payload: {
+          ok: false,
+          code: res.code,
+          idempotency_key: parsed.data.idempotency_key ?? null,
+          duration_ms: Date.now() - startedAt,
+        },
+      }).catch(() => undefined);
       const code = res.code === "overlap" ? 409 : 400;
       return NextResponse.json({ ok: false, error: res.error, code: res.code }, { status: code });
     }
+    await insertAuditLog(pool, {
+      clinicId: parsed.data.clinic_id,
+      action: "appointment.create",
+      entityType: "appointment",
+      entityId: String(res.appointment_id),
+      payload: {
+        ok: true,
+        duplicate: res.duplicate ?? false,
+        idempotency_key: parsed.data.idempotency_key ?? null,
+        duration_ms: Date.now() - startedAt,
+      },
+    });
     return NextResponse.json({ ok: true, appointment_id: res.appointment_id, duplicate: res.duplicate ?? false });
   } catch (e) {
+    await insertAuditLog(getPool(), {
+      clinicId: parsed.data.clinic_id,
+      action: "appointment.create",
+      entityType: "appointment",
+      payload: { ok: false, duration_ms: Date.now() - startedAt },
+    }).catch(() => undefined);
     opsLogError("internal/scheduling/confirm", e, { clinic_id: parsed.data.clinic_id });
     return NextResponse.json({ ok: false, error: "internal_error" }, { status: 500 });
   }

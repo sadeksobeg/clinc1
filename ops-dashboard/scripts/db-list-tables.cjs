@@ -1,3 +1,4 @@
+require("./load-ops-env.cjs");
 const { Client } = require("pg");
 const url = (process.env.DATABASE_URL || "postgresql://postgres:postgres@127.0.0.1:5435/clinicsaas").trim();
 (async () => {

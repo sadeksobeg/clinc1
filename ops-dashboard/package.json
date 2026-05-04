@@ -17,7 +17,28 @@
     "db:provision-local-ops": "node scripts/provision-ops-crm-database.cjs",
     "db:list-tables": "node scripts/db-list-tables.cjs",
     "db:replay-events": "node scripts/replay-domain-events.cjs",
-    "worker:event-consumer-stub": "node scripts/event-consumer-stub.cjs"
+    "billing:smoke": "node scripts/smoke-manual-billing.cjs",
+    "worker:event-consumer-stub": "node scripts/event-consumer-stub.cjs",
+    "ops:load-test": "node scripts/load-test.cjs",
+    "ops:chaos-smoke": "node scripts/chaos-smoke.cjs",
+    "ops:data-integrity": "node scripts/data-integrity-check.cjs",
+    "ops:alerts:check": "node scripts/alerts-watchdog.cjs",
+    "ops:runbook-smoke": "npm test && node scripts/chaos-smoke.cjs && node scripts/data-integrity-check.cjs",
+    "ops:go-live-preflight": "node scripts/go-live-preflight.cjs",
+    "ops:pilot-day2": "node scripts/pilot-clinic-day2.cjs",
+    "ops:soft-launch-day3": "node scripts/soft-launch-day3.cjs",
+    "ops:n8n:backup-workflows": "node scripts/n8n-backup-workflows.cjs",
+    "ops:n8n:env-sanity": "node scripts/n8n-env-sanity.cjs",
+    "ops:n8n:smoke-critical-flows": "node scripts/n8n-critical-flows-smoke.cjs",
+    "auth:seed-super-admin": "node scripts/seed-super-admin.cjs",
+    "auth:super-admin:allowlist": "node scripts/super-admin-allowlist.cjs",
+    "auth:super-admin:mfa-recovery": "node scripts/super-admin-mfa-recovery.cjs",
+    "worker:inbound-deferred": "tsx scripts/inbound-deferred-worker.ts",
+    "worker:billing-reminders": "node scripts/billing-reminders-worker.cjs",
+    "worker:state-engine": "tsx scripts/state-engine-worker.ts",
+    "worker:blast-radius": "tsx scripts/blast-radius-worker.ts",
+    "worker:decision-engine": "tsx scripts/decision-engine-worker.ts",
+    "worker:action-verify": "tsx scripts/action-verification-worker.ts"
   },
   "dependencies": {
     "autoprefixer": "10.4.20",
@@ -40,6 +61,7 @@
     "@types/pg": "8.11.10",
     "@types/react": "18.3.3",
     "typescript": "5.5.4",
+    "tsx": "4.19.2",
     "vitest": "2.1.6"
   },
   "optionalDependencies": {

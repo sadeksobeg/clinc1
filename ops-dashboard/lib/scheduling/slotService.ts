@@ -10,6 +10,8 @@ export type FindSlotsParams = {
   specialty?: string;
   limit?: number;
   horizonDays?: number;
+  /** ISO `yyyy-MM-dd` في تقويم العيادة؛ تبدأ الحلقة من هذا اليوم (لا يُقبل قبل اليوم الحالي). */
+  dayKey?: string;
   /** When set, `routing.selected_clinic_id` overrides `clinicId` for slot search (same as internal slots API). */
   conversationId?: number;
 };
@@ -74,17 +76,52 @@ export async function findNextSlots(pool: Pool, params: FindSlotsParams): Promis
   for (const w of wh.rows as { weekday: number; opens: string; closes: string }[]) {
     map.set(w.weekday, { opens: w.opens.slice(0, 8), closes: w.closes.slice(0, 8) });
   }
+  // Backward-compatible fallback:
+  // If doctor_working_hours is not configured yet, use clinic_public_hours (if set),
+  // otherwise use a sane default window so booking doesn't dead-end in WhatsApp.
+  if (map.size === 0) {
+    const ch = await pool.query(
+      `SELECT weekday, is_closed, opens_at::text AS opens, closes_at::text AS closes
+       FROM clinic_public_hours
+       WHERE clinic_id = $1
+       ORDER BY weekday ASC`,
+      [clinicId],
+    );
+    for (const r of ch.rows as { weekday: number; is_closed: boolean; opens: string | null; closes: string | null }[]) {
+      const wd = Number(r.weekday);
+      if (!Number.isFinite(wd) || wd < 0 || wd > 6) continue;
+      if (r.is_closed) continue;
+      const opens = (r.opens || "09:00:00").slice(0, 8);
+      const closes = (r.closes || "21:00:00").slice(0, 8);
+      map.set(wd, { opens, closes });
+    }
+    if (map.size === 0) {
+      for (let wd = 0; wd <= 6; wd += 1) {
+        map.set(wd, { opens: "09:00:00", closes: "21:00:00" });
+      }
+    }
+  }
 
   const zone = row.timezone || "Asia/Amman";
   const now = DateTime.utc();
+  const todayStart = now.setZone(zone).startOf("day");
+  let startDay = todayStart;
+  const rawDay = params.dayKey?.trim();
+  if (rawDay) {
+    const parsed = DateTime.fromISO(rawDay, { zone });
+    if (parsed.isValid) {
+      const d0 = parsed.startOf("day");
+      if (d0 >= todayStart) startDay = d0;
+    }
+  }
   const localDays: DateTime[] = [];
-  let d = now.setZone(zone).startOf("day");
   for (let i = 0; i < horizonDays; i += 1) {
-    localDays.push(d.plus({ days: i }));
+    localDays.push(startDay.plus({ days: i }));
   }
 
-  const fromUtc = now.minus({ hours: 1 });
-  const toUtc = now.plus({ days: horizonDays + 1 });
+  const fromUtc = todayStart.toUTC().minus({ hours: 1 });
+  const lastSearchDay = startDay.plus({ days: horizonDays });
+  const toUtc = lastSearchDay.endOf("day").toUTC().plus({ minutes: 1 });
   const busyR = await pool.query(
     `SELECT starts_at, ends_at FROM appointments
      WHERE doctor_id = $1 AND deleted_at IS NULL
@@ -113,7 +150,7 @@ export async function findNextSlots(pool: Pool, params: FindSlotsParams): Promis
     weekdayToHours.set(k, v);
   }
 
-  const picked = pickFirstFreeSlots(zone, localDays, weekdayToHours, row.slot_duration_minutes, busy, limit);
+  const picked = pickFirstFreeSlots(zone, localDays, weekdayToHours, row.slot_duration_minutes, busy, limit, now, 2);
   return picked.map((s) => ({
     starts_at: s.startUtc.toISO()!,
     ends_at: s.endUtc.toISO()!,
@@ -146,7 +183,19 @@ export async function explainNoSlots(pool: Pool, params: FindSlotsParams): Promi
     [doctorId],
   );
   if (!wh.rows.length) {
-    return { closed_message_ar: "لم تُعرّف أوقات عمل للطبيب بعد. يرجى التواصل مع الإدارة." };
+    // Fallback to clinic public hours; if still empty, give a friendly generic answer.
+    const ch = await pool.query(
+      `SELECT weekday, is_closed, opens_at::text AS opens, closes_at::text AS closes
+       FROM clinic_public_hours
+       WHERE clinic_id = $1
+       ORDER BY weekday ASC`,
+      [clinicId],
+    );
+    const anyOpen = (ch.rows ?? []).some((r: any) => !r?.is_closed);
+    if (!anyOpen) {
+      return { closed_message_ar: "لم تُعرّف أوقات عمل للعيادة بعد. يرجى التواصل مع الإدارة." };
+    }
+    return { closed_message_ar: "لم تُعرّف أوقات عمل للطبيب بعد، لكن ساعات العيادة موجودة. جرّب مرة أخرى أو اختر طبيبًا آخر." };
   }
   const hoursRows: DayHours[] = (wh.rows as { weekday: number; opens: string; closes: string }[]).map((r) => ({
     weekday: r.weekday,

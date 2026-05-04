@@ -1,0 +1,259 @@
+SYSTEM AUDIT REPORT (POST P1 BILLING & GROWTH INFRASTRUCTURE)
+Date: 2026-04-23
+Mode: Read-only analysis (no code changes in audit step)
+
+==================================================
+PART 1 - ARCHITECTURE OVERVIEW
+==================================================
+
+1) Frontend Apps
+- apps/web:
+  - Next.js App Router with two route groups:
+    - Public: app/(public) -> /, /features, /pricing, /trial, /demo, /contact
+    - App: app/(app) -> /dashboard, /inbox, /appointments, /patients, /doctors, /analytics, /billing, /settings
+  - Main shells:
+    - Public shell: components/marketing/public-shell.tsx
+    - App shell: components/layout/AppChrome.tsx
+  - State management:
+    - Mostly local component state (useState/useEffect/useMemo)
+    - No global Redux/Zustand store
+  - Auth/guards:
+    - No middleware-based route guard in apps/web
+    - Login page is demo-like, not a full auth boundary
+
+- ops-dashboard:
+  - Next.js App Router with authenticated main routes under app/(main)
+  - Core pages: /inbox, /analytics, /secretary, /doctor, /billing, /account, /welcome
+  - Root flow:
+    - app/page.tsx redirects based on session + onboarding state
+  - State:
+    - Server components + local client state
+  - Auth/guards:
+    - middleware.ts verifies ops_session and enforces billing lock behavior
+
+- frontend/ClinicSaaS.Web (Angular):
+  - Still present in repo
+  - Route guards + signal/service-based architecture
+  - Appears as parallel/legacy surface compared to Next stacks
+
+2) Backend / Ops Dashboard
+- Internal APIs grouped by domain under ops-dashboard/app/api/internal:
+  - billing, analytics, scheduling, ai/decision, inbox/conversations, patients, doctors, audit, system
+- Core business logic in ops-dashboard/lib:
+  - Billing: lib/billing/localBilling.ts
+  - AI decisioning: lib/ai/*
+  - Conversation orchestration: lib/conversations/processInbound.ts
+  - Scheduling: lib/scheduling/*
+  - Analytics store: lib/analytics/trialFunnelStore.ts
+  - Auth/audit/metrics: lib/internalAuth.ts, lib/auditTrail.ts, lib/observability/productMetrics.ts
+
+3) Database
+- Schema is migration-driven (whatsapp-bridge/sql/migrations)
+- New billing/analytics-related migrations now include:
+  - 016_password_reset_tokens.sql
+  - 017_trial_funnel_events.sql
+  - 018_billing_reminder_runs.sql
+  - 019_trial_expiring_status.sql
+  - 020_billing_payment_integrity.sql
+  - 021_billing_invoices_receipts.sql
+  - 022_trial_funnel_attribution.sql
+
+Table classification:
+- Auth:
+  - staff_users
+  - password_reset_tokens
+- Clinics/Tenancy:
+  - clinics
+  - clinic_saas_tenant_links
+  - clinic_public_hours
+- Billing:
+  - clinic_local_subscriptions
+  - clinic_payment_requests
+  - billing_notification_log
+  - billing_reminder_runs
+  - billing_processed_events
+  - billing_invoices
+  - billing_receipts
+- Analytics:
+  - trial_funnel_events
+  - ai_interaction_logs
+- Scheduling:
+  - doctors
+  - appointments
+  - doctor_working_hours
+  - doctor_leaves
+  - notification_outbox
+- Support/Ops:
+  - alerts
+  - cases
+  - audit_logs
+  - domain_events
+  - processed_events
+  - dead_letter_events
+  - core_outbox
+
+==================================================
+PART 2 - USER JOURNEY COVERAGE
+==================================================
+
+A) Signup / Trial
+- Implemented:
+  - Trial signup wizard exists and tracks funnel events
+  - Trial backend creates clinic + admin + local subscription + doctors
+  - Duplicate trial guard exists in backend checks
+  - trial_expiring lifecycle exists at billing state layer
+  - onboarding_required is set and welcome flow exists
+- Gaps:
+  - apps/web login/auth is not production-grade
+  - direct access handoff is not a robust authenticated cross-surface flow
+
+B) Inside system (Clinic Workspace)
+- Implemented:
+  - Inbox actions, conversations, replies, core operations are active
+  - Profile + password APIs exist in ops-dashboard
+  - Billing screens + invoice/receipt visibility exist
+  - Doctor limits are now surfaced and enforced in internal doctors POST path
+- Gaps:
+  - apps/web multi-tenant context is not fully hardened (many defaults/fallbacks to clinic_id=1)
+
+C) End of Trial
+- Implemented:
+  - Billing lock logic exists and is enforced in middleware (ops-dashboard)
+  - Billing lock freshness check endpoint exists
+- Gaps:
+  - Billing page access behavior has inconsistency in UX routing when unlocked
+  - Trial-end conversion flow remains partially manual in places
+
+==================================================
+PART 3 - BILLING SYSTEM AUDIT
+==================================================
+
+Implemented:
+- Subscription states including trial_expiring
+- Payment request workflow (create/review)
+- Idempotency keys on create/review paths
+- Webhook integrity baseline:
+  - HMAC signature check
+  - timestamp freshness window
+  - processed-event dedupe table
+- Invoice and receipt lifecycle baseline:
+  - invoice issuance
+  - mark paid + receipt creation on approval
+- Reminder scheduler and persistent run history
+- Trial->paid KPI signal path added in analytics
+
+Remaining risks:
+- Some operations are not fully transactionally/operationally hardened around audit side-effects
+- Reminder dedupe/backoff logic is not yet finance-grade
+- trial_paid_conversion semantics can overcount renewals if not filtered by request_type
+- Invoice lifecycle beyond issued/paid (void/refund/correction policy) is still limited
+
+Billing production verdict:
+- Ready for controlled pilot / low-to-medium manual operations
+- Not yet world-class finance-grade at high scale without hardening above
+
+==================================================
+PART 4 - ADMIN & OPS CAPABILITIES
+==================================================
+
+Current admin can:
+- Review/approve/reject payment requests
+- See billing revenue summaries
+- Run reminders and view run history
+- View invoices/receipts
+- View analytics funnel and KPI trends
+- Monitor deep system health endpoints
+
+Current admin cannot fully do yet:
+- Full SLA-driven support/ticket operations from a dedicated support cockpit
+- Advanced collections aging workflow automation
+- Fine-grained policy governance across all surfaces
+- Unified centralized operations center across all app surfaces
+
+==================================================
+PART 5 - SUPPORT & OPERATIONS (CRITICAL)
+==================================================
+
+Exists:
+- Cases/alerts primitives and operational logs
+- Rich inbox context useful for manual handling
+
+Missing (major):
+- Full support desk system:
+  - ticket lifecycle (open/assigned/escalated/resolved)
+  - SLA clocks and breach tracking
+  - dedicated support roles + scoped permissions
+  - support-focused UI to triage at scale
+
+Conclusion:
+- Support capabilities are partially present as primitives, but not complete as a production support system.
+
+==================================================
+PART 6 - SECURITY & RELIABILITY
+==================================================
+
+Authentication:
+- ops-dashboard auth/session is implemented and guarded
+- apps/web authentication boundary is weak/non-production in current form
+
+Authorization:
+- Internal token protections exist
+- apps/web proxy endpoints still need strict user/session authorization hardening
+
+API protection:
+- Stronger on ops internal APIs
+- Weaker at edge in apps/web BFF routes if not guarded by user auth
+
+Webhook security:
+- Good baseline (HMAC + timestamp + dedupe)
+
+Rate limiting:
+- Present on auth-related paths
+- In-memory strategy only (not distributed)
+
+Audit logs:
+- Present and useful
+- Not yet fully immutable/universal across every privileged action path
+
+Reliability:
+- Strong pipeline controls exist:
+  - dedupe, locks, deferred queue, outbox, DLQ patterns, deep health checks
+
+Security readiness verdict:
+- Solid baseline in ops-dashboard
+- Overall production security still blocked by apps/web auth/authorization gaps
+
+==================================================
+PART 7 - MISSING PRODUCTION BLOCKERS
+==================================================
+
+Production blockers (launch-critical):
+1) apps/web lacks production-grade auth gate
+2) Several apps/web /api/ops/* proxy routes can expose privileged operations if unguarded
+3) Service-token blast radius is broad
+4) Tenant-safety risk due to clinic_id defaults in multiple web paths
+
+Major missing systems:
+1) Full support desk with SLA and escalation management
+2) Robust global session revocation model
+3) Centralized observability stack (beyond in-process counters)
+4) Fine-grained authorization/policy matrix
+
+Nice-to-have later:
+1) MFA for privileged roles
+2) Token rotation automation and scoped tokens
+3) SIEM export/correlation pipeline
+4) Advanced cohort experimentation UI
+
+==================================================
+PART 8 - FINAL SCORE
+==================================================
+
+Product completeness: 78%
+Technical readiness: 74%
+Launch readiness: 68%
+
+Final judgment:
+The platform is significantly advanced and commercially meaningful after P1, with strong billing/analytics foundations.  
+However, it is not yet "SaaS world-class launch-ready" until apps/web auth/authorization boundaries and support operations gaps are fully closed.
+

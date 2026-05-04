@@ -1,0 +1,85 @@
+{
+  "id": "opsAlertWebhook01",
+  "name": "ops-alert-webhook",
+  "active": true,
+  "isArchived": false,
+  "createdAt": "2026-04-21T08:00:00.000Z",
+  "updatedAt": "2026-04-21T08:00:00.000Z",
+  "versionId": "1",
+  "triggerCount": 0,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": null,
+  "tags": [],
+  "pinData": {},
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ops-alert",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "9c9f2b43-2a16-41fb-8d63-11fb26bdf53e",
+      "name": "Ops Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "f3f51c98-e5d7-4f29-9d6e-a9e45d9fbc11",
+      "position": [
+        300,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "ok",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "name": "received",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "name": "flow",
+              "value": "ops-alert",
+              "type": "string"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{new Date().toISOString()}}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false
+      },
+      "id": "2e0d7db8-f904-4569-b3d1-fb231e876927",
+      "name": "Ops Alert Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        540,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Ops Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Ops Alert Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

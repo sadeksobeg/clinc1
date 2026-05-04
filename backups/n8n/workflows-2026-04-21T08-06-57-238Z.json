@@ -1,0 +1,2160 @@
+[
+  {
+    "updatedAt": "2026-04-19T17:51:27.999Z",
+    "createdAt": "2026-04-19T13:46:31.220Z",
+    "id": "uIcdWub0XdSpanna",
+    "name": "whatsapp-clinic-stability-layer",
+    "description": null,
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "whatsapp",
+          "responseMode": "lastNode",
+          "options": {}
+        },
+        "id": "df382370-e43b-4f3a-a7d6-4a663ab36a3d",
+        "name": "Webhook Inbound",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -3600,
+          192
+        ],
+        "webhookId": "9934bbdd-4a05-4f99-aea2-c53e134b2f3c"
+      },
+      {
+        "parameters": {
+          "jsCode": "const crypto = require('crypto');\nfunction timingSafeEqualHex(a, b) {\n  try {\n    const ba = Buffer.from(String(a).trim(), 'hex');\n    const bb = Buffer.from(String(b).trim(), 'hex');\n    if (ba.length !== bb.length) return false;\n    return crypto.timingSafeEqual(ba, bb);\n  } catch {\n    return false;\n  }\n}\nconst secret = (process.env.N8N_WEBHOOK_HMAC_SECRET || '').trim();\nconst item = $input.first().json;\nconst headers = item.headers || {};\nconst sigHeader = headers['x-bridge-signature'] || headers['X-Bridge-Signature'] || '';\nconst m = /^sha256=(.+)$/i.exec(String(sigHeader));\nconst digestFromHeader = m ? m[1].trim() : '';\nconst body = item.body || {};\nconst clinic_id = typeof body.clinic_id === 'number' ? body.clinic_id : (Number.parseInt(String(body.clinic_id || '1').replace(/[^0-9]/g, ''), 10) || 1);\nconst sender = String(body.sender || body.from || '').trim();\nconst from = String(body.from || body.sender || '').trim();\nconst text = String(body.text || '');\nconst messageId = String(body.messageId || '');\nconst timestamp = body.timestamp;\nconst receivedAt = String(body.receivedAt || '');\nconst canonicalObj = { clinic_id, sender: sender || from, from: from || sender, text, messageId, timestamp, receivedAt };\nconst raw = JSON.stringify(canonicalObj);\nlet hmacOk = true;\nif (secret) {\n  const expected = crypto.createHmac('sha256', secret).update(raw, 'utf8').digest('hex');\n  hmacOk = timingSafeEqualHex(expected, digestFromHeader);\n}\nreturn [{ json: { ...item, hmacOk, hmacChecked: Boolean(secret) } }];"
+        },
+        "id": "ee8ce9b2-465c-4029-a29e-2c9a32283cbf",
+        "name": "Verify Webhook HMAC",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -3488,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "hmac_ok",
+                "leftValue": "={{$json.hmacOk}}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "953e30d6-e49d-4683-adca-0736e8d6621b",
+        "name": "HMAC OK?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -3360,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "ok",
+                "value": false,
+                "type": "boolean"
+              },
+              {
+                "name": "error",
+                "value": "hmac_rejected",
+                "type": "string"
+              },
+              {
+                "name": "sent",
+                "value": false,
+                "type": "boolean"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "5bd1b678-ccf5-4867-bb40-5cbc1348afe2",
+        "name": "Respond HMAC Rejected",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -3360,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const hashText = (input) => {\n  const source = String(input || '');\n  let hash = 0;\n  for (let i = 0; i < source.length; i += 1) {\n    hash = ((hash << 5) - hash) + source.charCodeAt(i);\n    hash |= 0;\n  }\n  return `h${Math.abs(hash)}`;\n};\n\nconst body = $json.body || {};\nconst clinicIdRaw = String(body.clinic_id || '1').trim();\nconst clinic_id = Number.parseInt(clinicIdRaw.replace(/[^0-9]/g, ''), 10) || 1;\nconst workflowStartedAt = Date.now();\nconst from = String(body.from || body.sender || '').trim();\nconst text = String(body.text || '').trim();\nconst messageId = String(body.messageId || '');\nconst words = text.toLowerCase();\n\nconst bookingKeywords = ['حجز', 'موعد', 'appointment', 'book', 'reserve'];\nconst pricingKeywords = ['سعر', 'كم', 'تكلفة', 'price', 'cost'];\nconst emergencyKeywords = ['طوارئ', 'نزيف', 'ألم شديد', 'الم شديد', 'urgent', 'emergency'];\n\nconst clinicTimezone = 'Asia/Amman';\nconst startHour = 9;\nconst endHour = 21;\nconst nowHour = Number(new Date().toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: clinicTimezone }));\nconst outsideHours = nowHour < startHour || nowHour >= endHour;\n\nconst contains = (arr) => arr.some((k) => words.includes(k));\nconst pick = (arr) => arr[Math.floor(Math.random() * arr.length)];\n\nlet ruleIntent = 'GENERAL';\nif (contains(emergencyKeywords)) ruleIntent = 'URGENT';\nelse if (contains(bookingKeywords)) ruleIntent = 'BOOKING';\nelse if (contains(pricingKeywords)) ruleIntent = 'PRICING';\n\nconst priorityMap = { URGENT: 1, BOOKING: 2, PRICING: 3, GENERAL: 4 };\nconst rulePriority = priorityMap[ruleIntent] || 4;\nconst ruleHandoff = ruleIntent === 'URGENT';\n\nlet fallbackReply;\nif (outsideHours) {\n  fallbackReply = pick([\n    'وصلتنا رسالتك، الدوام حالياً مغلق. سنعاود الرد عند بدء الدوام بإذن الله.',\n    'شكراً لتواصلك، نحن خارج أوقات الدوام الآن وسنرد عليك أول ما يبدأ الدوام.'\n  ]);\n} else if (ruleIntent === 'URGENT') {\n  fallbackReply = pick([\n    'تم استلام رسالتك بشكل عاجل. إذا كانت الحالة طارئة جداً يرجى التواصل مباشرة مع الطوارئ، وسيتم تحويل رسالتك للفريق حالاً.',\n    'وصلتنا حالتك كأولوية. في حال وجود خطر مباشر يرجى التوجه للطوارئ فوراً، وسنتابع معك بأسرع وقت.'\n  ]);\n} else if (ruleIntent === 'BOOKING') {\n  fallbackReply = pick([\n    'أهلاً بك، تم استلام طلب الحجز. أرسل اسم المريض ورقم الهاتف والوقت المناسب وسننسق الموعد.',\n    'تم استلام طلب الموعد. من فضلك أرسل الاسم الثلاثي ورقم الهاتف والفترة المناسبة للحجز.'\n  ]);\n} else if (ruleIntent === 'PRICING') {\n  fallbackReply = pick([\n    'الأسعار تختلف حسب الحالة، أرسل تفاصيل أكثر وسنوضح التكلفة المناسبة.',\n    'حتى نحدد السعر بدقة، يرجى توضيح نوع الحالة أو الخدمة المطلوبة.'\n  ]);\n} else {\n  fallbackReply = pick([\n    'تم استلام رسالتك، وسيقوم فريق العيادة بالرد عليك قريباً.',\n    'وصلتنا رسالتك بنجاح، نشكرك على تواصلك وسنرد عليك بأقرب وقت.'\n  ]);\n}\n\nconst dedupeHash = hashText([from, messageId, text].join('::'));\n\nreturn [{\n  json: {\n    from,\n    to: from,\n    text,\n    messageId,\n    receivedAt: new Date().toISOString(),\n    outsideHours,\n    alertTo: '9639XXXXXXXXX@c.us',\n    dedupeHash,\n    ruleIntent,\n    rulePriority,\n    ruleHandoff,\n    fallbackReply,\n    clinic_id,\n    workflowStartedAt\n  }\n}];"
+        },
+        "id": "70bab4bb-842d-46f9-adfd-88fa576ade36",
+        "name": "Normalize Input",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -3360,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "has_sender",
+                "leftValue": "={{$json.to}}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "ef6e8667-ecff-40b0-9e2a-d068c581b04f",
+        "name": "Has Sender?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -3120,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ (($env.OPS_DASHBOARD_URL || 'http://host.docker.internal:3001').replace(/\\/$/, '')) + '/api/internal/crm/inbound-ingest' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SCHEDULING_SERVICE_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ clinic_id: $json.clinic_id, from: $json.from, text: $json.text, messageId: $json.messageId, dedupeHash: $json.dedupeHash, ruleIntent: $json.ruleIntent, rulePriority: $json.rulePriority, ruleHandoff: $json.ruleHandoff, fallbackReply: $json.fallbackReply, outsideHours: $json.outsideHours, receivedAt: $json.receivedAt, alertTo: $json.alertTo, workflowStartedAt: $json.workflowStartedAt }) }}",
+          "options": {
+            "timeout": 60000
+          }
+        },
+        "id": "0f578036-c8c5-4edc-a34b-39743988154e",
+        "name": "CRM Upsert Inbound",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -2880,
+          192
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO audit_logs (clinic_id, actor_type, action, entity_type, payload, created_at)\nVALUES (\n  COALESCE({{ $('Normalize Input').item.json.clinic_id }}, 1)::bigint,\n  'n8n',\n  'dlq_crm_upsert_inbound',\n  'workflow',\n  jsonb_build_object('hint', 'See execution data for error details'),\n  NOW()\n)\nRETURNING id;",
+          "options": {}
+        },
+        "id": "0e417e20-7d77-47fd-890f-5a206aada3ca",
+        "name": "Audit DLQ",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -2880,
+          400
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const j = $input.first().json;\nconst b = j.body && typeof j.body === 'object' && !Array.isArray(j.body) ? j.body : {};\nreturn [{ json: { ...j, ...b } }];"
+        },
+        "id": "e3496890-8b83-4cfe-9bf7-d20dcf5f9462",
+        "name": "Flatten CRM Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2704,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "is_duplicate",
+                "leftValue": "={{$json.is_duplicate}}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "b6d20a7f-b125-4f6b-a579-8c122767568f",
+        "name": "Is Duplicate?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -2640,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "ok",
+                "value": true,
+                "type": "boolean"
+              },
+              {
+                "name": "duplicate",
+                "value": true,
+                "type": "boolean"
+              },
+              {
+                "name": "dedupeHash",
+                "value": "={{$json.dedupeHash}}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "45e10f12-bd49-43a7-887f-e46f73ac9d34",
+        "name": "Respond Duplicate",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -2400,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const crm = $input.first().json;\nasync function main() {\n  const base = process.env.OPS_DASHBOARD_URL || \"http://host.docker.internal:3001\";\n  const token = process.env.SCHEDULING_SERVICE_TOKEN || \"\";\n  if (!token) {\n    return {\n      ...crm,\n      finalIntent: crm.ruleIntent,\n      finalPriority: crm.rulePriority,\n      finalReply: crm.fallbackReply,\n      handoffRequired: crm.ruleHandoff,\n      decisionSource: \"rules\",\n      aiValid: false,\n      aiFailureReason: \"no_service_token\",\n    };\n  }\n  try {\n    const r1 = await fetch(base + \"/api/internal/scheduling/interpret\", {\n      method: \"POST\",\n      headers: { \"Content-Type\": \"application/json\", Authorization: \"Bearer \" + token },\n      body: JSON.stringify({ text: crm.text }),\n    });\n    let int;\n    try {\n      int = await r1.json();\n    } catch {\n      throw new Error(\"interpret_bad_json\");\n    }\n    if (!r1.ok || !int || !int.ok || !int.interpret) {\n      const msg = (int && (int.error || int.detail)) || \"interpret_http_\" + r1.status;\n      throw new Error(String(msg));\n    }\n    const intent = int.interpret.intent;\n    if (intent === \"urgent\") {\n      return {\n        ...crm,\n        finalIntent: \"URGENT\",\n        finalPriority: 1,\n        finalReply:\n          crm.fallbackReply ||\n          \"تم استلام حالتك كأولوية. إذا كانت الحالة طارئة جداً يرجى التواصل مع الطوارئ.\",\n        handoffRequired: true,\n        decisionSource: \"scheduling_interpret\",\n        aiValid: false,\n        aiFailureReason: \"n/a\",\n      };\n    }\n    if (intent !== \"booking\") {\n      return {\n        ...crm,\n        finalIntent: crm.ruleIntent,\n        finalPriority: crm.rulePriority,\n        finalReply: crm.fallbackReply,\n        handoffRequired: crm.ruleHandoff,\n        decisionSource: \"rules\",\n        aiValid: false,\n        aiFailureReason: \"not_booking\",\n      };\n    }\n    const r2 = await fetch(base + \"/api/internal/scheduling/slots\", {\n      method: \"POST\",\n      headers: { \"Content-Type\": \"application/json\", Authorization: \"Bearer \" + token },\n      body: JSON.stringify({\n        clinic_id: Number(crm.clinic_id),\n        conversation_id: Number(crm.conversation_id),\n        specialty: int.interpret.specialty || undefined,\n      }),\n    });\n    let slots;\n    try {\n      slots = await r2.json();\n    } catch {\n      throw new Error(\"slots_bad_json\");\n    }\n    if (!r2.ok || !slots || !slots.ok) {\n      const msg = (slots && (slots.error || slots.detail)) || \"slots_http_\" + r2.status;\n      throw new Error(String(msg));\n    }\n    const lines = (slots.reply_lines || []).join(\"\\n\");\n    const closed = slots.closed_message_ar;\n    const finalReply = lines\n      ? \"أهلاً بك، أقرب المواعيد المتاحة:\\n\" + lines + \"\\nأرسل رقم الخيار (1، 2، أو 3).\"\n      : closed || crm.fallbackReply;\n    return {\n      ...crm,\n      finalIntent: \"BOOKING\",\n      finalPriority: 2,\n      finalReply,\n      handoffRequired: false,\n      decisionSource: \"scheduling_engine\",\n      aiValid: false,\n      aiFailureReason: \"n/a\",\n      schedulingSlots: slots.slots,\n    };\n  } catch (e) {\n    return {\n      ...crm,\n      finalIntent: crm.ruleIntent,\n      finalPriority: crm.rulePriority,\n      finalReply: crm.fallbackReply,\n      handoffRequired: crm.ruleHandoff,\n      decisionSource: \"rules\",\n      aiValid: false,\n      aiFailureReason: String(e && e.message),\n    };\n  }\n}\nreturn main().then((j) => [{ json: j }]);\n"
+        },
+        "id": "059503a9-54df-42ac-910f-cc5c821891bc",
+        "name": "Scheduling Engine",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2160,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "finalIntent",
+                "value": "={{$json.ruleIntent}}",
+                "type": "string"
+              },
+              {
+                "name": "finalPriority",
+                "value": "={{$json.rulePriority}}",
+                "type": "number"
+              },
+              {
+                "name": "finalReply",
+                "value": "={{$json.fallbackReply}}",
+                "type": "string"
+              },
+              {
+                "name": "handoffRequired",
+                "value": "={{$json.ruleHandoff}}",
+                "type": "boolean"
+              },
+              {
+                "name": "decisionSource",
+                "value": "rules",
+                "type": "string"
+              },
+              {
+                "name": "aiValid",
+                "value": false,
+                "type": "boolean"
+              },
+              {
+                "name": "aiFailureReason",
+                "value": "ai_bypassed",
+                "type": "string"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "id": "09f02319-9643-4f8b-b971-50d3715d9bc2",
+        "name": "Rules Fallback",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -1920,
+          240
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE conversations\nSET state = CASE\n    WHEN '{{$json.finalIntent}}' = 'URGENT' OR {{$json.handoffRequired ? 'true' : 'false'}} THEN 'TRIAGE'\n    ELSE 'ACTIVE'\n  END,\n  updated_at = NOW()\nWHERE id = {{$json.conversation_id}} AND clinic_id = COALESCE({{$json.clinic_id}}, 1)::bigint\nRETURNING id, state;",
+          "options": {}
+        },
+        "id": "710fcc0d-0112-4905-b8bd-3bba926373f1",
+        "name": "Update Conversation State",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -960,
+          144
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "handoff_or_urgent",
+                "leftValue": "={{$json.handoffRequired || $json.finalIntent === 'URGENT' || Number($json.finalPriority) === 1}}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "60c3846c-dd73-4860-aa25-0fa3fb874080",
+        "name": "Decision Gate",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -720,
+          144
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "WITH new_case AS (\n  INSERT INTO cases (\n    clinic_id, patient_id, conversation_id, case_type, priority, status, summary, notes, source, opened_at, created_at, updated_at\n  ) VALUES (\n    COALESCE({{$json.clinic_id}}, 1)::bigint,\n    {{$json.patient_id}},\n    {{$json.conversation_id}},\n    '{{$json.finalIntent}}',\n    CASE {{$json.finalPriority}} WHEN 1 THEN 'high' WHEN 2 THEN 'normal' WHEN 3 THEN 'normal' ELSE 'low' END,\n    'open',\n    $${{$json.text}}$$,\n    'Created by stability workflow',\n    'n8n',\n    NOW(), NOW(), NOW()\n  )\n  RETURNING id\n)\nSELECT\n  (SELECT id FROM new_case) AS case_id,\n  COALESCE({{$json.clinic_id}}, 1)::bigint AS clinic_id,\n  {{$json.patient_id}}::bigint AS patient_id,\n  {{$json.conversation_id}}::bigint AS conversation_id,\n  '{{$json.from}}' AS \"from\",\n  $${{$json.text}}$$ AS \"text\",\n  '{{$json.finalIntent}}' AS \"finalIntent\",\n  {{$json.finalPriority}}::int AS \"finalPriority\",\n  $${{$json.finalReply || ''}}$$ AS \"finalReply\",\n  {{$json.handoffRequired ? 'true' : 'false'}} AS \"handoffRequired\",\n  '{{$json.decisionSource || \"rules\"}}' AS \"decisionSource\",\n  {{$json.aiValid ? 'true' : 'false'}} AS \"aiValid\",\n  '{{$json.alertTo || ''}}' AS \"alertTo\";",
+          "options": {}
+        },
+        "id": "5f1394ef-1dea-4b73-b82c-c601228b9a41",
+        "name": "Create Case",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -480,
+          64
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "urgentAlertText",
+                "value": "=🚨 حالة تحتاج متابعة بشرية\\nالمريض: {{$json.from}}\\nالنوع: {{$json.finalIntent}}\\nالأولوية: {{$json.finalPriority}}\\nالنص: {{$json.text}}",
+                "type": "string"
+              },
+              {
+                "name": "replyText",
+                "value": "=تم تحويل رسالتك للفريق المختص وسيتم التواصل معك بأسرع وقت.",
+                "type": "string"
+              },
+              {
+                "name": "sendRetries",
+                "value": 0,
+                "type": "number"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "id": "48ee70cc-ea90-4e49-b695-52b4328d9603",
+        "name": "Build Alert",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -240,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO alerts (\n  clinic_id, conversation_id, patient_id, alert_type, target, status, notes, payload, created_at\n) VALUES (\n  COALESCE({{$json.clinic_id}}, 1)::bigint,\n  {{$json.conversation_id}},\n  {{$json.patient_id}},\n  '{{$json.finalIntent}}',\n  '{{$json.alertTo}}',\n  'queued',\n  'stability workflow alert',\n  jsonb_build_object('decision_source', '{{$json.decisionSource}}'),\n  NOW()\n) RETURNING id;",
+          "options": {}
+        },
+        "id": "0aa62af1-4a7e-42a8-9f9d-21d60ca72f79",
+        "name": "Log Alert",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          0,
+          0
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "has_alert_target",
+                "leftValue": "={{$json.alertTo}}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "398bfbae-2a37-4174-836e-c638601e95a0",
+        "name": "Has Alert Target?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          144
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ (($env.BRIDGE_SEND_URL || 'http://host.docker.internal:3100').replace(/\\/$/, '')) + '/send' }}",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\"to\":\"{{$json.alertTo}}\",\"text\":\"{{$json.urgentAlertText}}\"}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "a70fec2d-5053-45cd-9c60-cc6a1ee93e17",
+        "name": "Send Urgent Alert",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          240,
+          80
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "replyText",
+                "value": "={{$json.finalReply}}",
+                "type": "string"
+              },
+              {
+                "name": "sendRetries",
+                "value": 0,
+                "type": "number"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "id": "6161c43d-8f10-44e3-b495-31491917f745",
+        "name": "Prepare Reply",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -480,
+          240
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO messages (\n  clinic_id, conversation_id, patient_id, direction, text, intent, priority, is_urgent, dedup_skipped, source, payload, created_at\n) VALUES (\n  COALESCE({{$json.clinic_id}}, 1)::bigint,\n  {{$json.conversation_id}},\n  {{$json.patient_id}},\n  'outbound',\n  $${{$json.replyText}}$$,\n  '{{$json.finalIntent}}',\n  {{$json.finalPriority}},\n  {{$json.finalIntent === 'URGENT' ? 'true' : 'false'}},\n  false,\n  'n8n',\n  jsonb_build_object('decision_source', '{{$json.decisionSource}}', 'ai_used', {{$json.aiValid ? 'true' : 'false'}}, 'send_retries', {{$json.sendRetries || 0}}),\n  NOW()\n) RETURNING id;",
+          "options": {}
+        },
+        "id": "c8b25c84-336f-491a-b106-a706cfe1721d",
+        "name": "CRM Log Outbound",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          480,
+          208
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ (($env.BRIDGE_SEND_URL || 'http://host.docker.internal:3100').replace(/\\/$/, '')) + '/send' }}",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\"to\":\"{{$json.from || $node['CRM Upsert Inbound'].json['from']}}\",\"text\":\"{{$json.replyText || $json.finalReply || $json.fallbackReply || $node['Prepare Reply'].json['replyText'] || $node['Rules Fallback'].json['finalReply'] || 'تم استلام رسالتك وسيتم الرد عليك قريباً.'}}\"}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "3afa3627-dc3f-4edc-9433-9dfd57f40de0",
+        "name": "Send Reply via Bridge",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          720,
+          208
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.first().json;\nconst success = !item.error && (item.ok !== false);\nconst retries = Number(item.sendRetries || 0);\nreturn [{ json: { ...item, sendSucceeded: success, sendRetries: retries, sendFailureReason: success ? null : (item.error?.message || item.message || 'send_failed') } }];"
+        },
+        "id": "556fbad8-d0d6-49d9-846c-49fb82a51b7c",
+        "name": "Assess Send Result",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          960,
+          208
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "ok",
+                "value": "={{$json.sendSucceeded}}",
+                "type": "boolean"
+              },
+              {
+                "name": "intent",
+                "value": "={{$json.finalIntent}}",
+                "type": "string"
+              },
+              {
+                "name": "reply",
+                "value": "={{$json.replyText}}",
+                "type": "string"
+              },
+              {
+                "name": "decisionSource",
+                "value": "={{$json.decisionSource}}",
+                "type": "string"
+              },
+              {
+                "name": "sendRetries",
+                "value": "={{$json.sendRetries || 0}}",
+                "type": "number"
+              },
+              {
+                "name": "sendFailureReason",
+                "value": "={{$json.sendFailureReason || ''}}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "d4c31a9a-522a-41de-992f-a15c21d2a14d",
+        "name": "Respond Success",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          1200,
+          208
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "ok",
+                "value": false,
+                "type": "boolean"
+              },
+              {
+                "name": "sent",
+                "value": false,
+                "type": "boolean"
+              },
+              {
+                "name": "error",
+                "value": "Missing sender/from in inbound payload",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "1d8df488-c272-4aae-8007-959895dbfc43",
+        "name": "Respond Invalid Payload",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -2880,
+          352
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ (($env.OPS_DASHBOARD_URL || 'http://host.docker.internal:3001').replace(/\\/$/, '')) + '/api/internal/conversations/process-inbound' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SCHEDULING_SERVICE_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ clinic_id: typeof $json.body?.clinic_id === 'number' ? $json.body.clinic_id : (Number.parseInt(String($json.body?.clinic_id || '1').replace(/[^0-9]/g, ''), 10) || 1), from: String($json.body?.from || $json.body?.sender || '').trim(), text: String($json.body?.text || ''), messageId: String($json.body?.messageId || ''), receivedAt: String($json.body?.receivedAt || new Date().toISOString()), execute_send: true, send_urgent_alert: true, enqueue_on_bridge_failure: true }) }}",
+          "options": {
+            "timeout": 120000
+          }
+        },
+        "id": "7b374179-cc4e-4d5e-a7c1-ae582a0f085b",
+        "name": "Process Inbound Core",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -3264,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const row = $input.first().json;\nlet b = row;\nif (row && row.body && typeof row.body === 'object' && !Array.isArray(row.body)) b = row.body;\nconst ok = b.ok !== false && !b.error;\nconst dup = Boolean(b.duplicate);\nconst sendSucceeded = ok && (dup ? true : b.bridge_send_ok !== false);\nreturn [{ json: {\n  ok,\n  sent: sendSucceeded,\n  sendSucceeded,\n  finalIntent: String(b.finalIntent || ''),\n  replyText: String(b.reply_text || ''),\n  decisionSource: String(b.decision_source || ''),\n  sendRetries: 0,\n  sendFailureReason: String(b.bridge_send_error || b.error || ''),\n  duplicate: dup\n} }];"
+        },
+        "id": "f701d992-90e4-45c4-a358-34205bd339d4",
+        "name": "Format Process Inbound",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -3104,
+          192
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook Inbound": {
+        "main": [
+          [
+            {
+              "node": "Verify Webhook HMAC",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Input": {
+        "main": [
+          [
+            {
+              "node": "Has Sender?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Has Sender?": {
+        "main": [
+          [
+            {
+              "node": "CRM Upsert Inbound",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Respond Invalid Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "CRM Upsert Inbound": {
+        "main": [
+          [
+            {
+              "node": "Flatten CRM Response",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Audit DLQ",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Audit DLQ": {
+        "main": [
+          [
+            {
+              "node": "Respond Invalid Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Duplicate?": {
+        "main": [
+          [
+            {
+              "node": "Respond Duplicate",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Scheduling Engine",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Conversation State": {
+        "main": [
+          [
+            {
+              "node": "Decision Gate",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Decision Gate": {
+        "main": [
+          [
+            {
+              "node": "Create Case",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Prepare Reply",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create Case": {
+        "main": [
+          [
+            {
+              "node": "Build Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Alert": {
+        "main": [
+          [
+            {
+              "node": "Log Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Alert": {
+        "main": [
+          [
+            {
+              "node": "Has Alert Target?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Has Alert Target?": {
+        "main": [
+          [
+            {
+              "node": "Send Urgent Alert",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Send Reply via Bridge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Urgent Alert": {
+        "main": [
+          [
+            {
+              "node": "Send Reply via Bridge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Reply": {
+        "main": [
+          [
+            {
+              "node": "Send Reply via Bridge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "CRM Log Outbound": {
+        "main": [
+          [
+            {
+              "node": "Send Reply via Bridge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Reply via Bridge": {
+        "main": [
+          [
+            {
+              "node": "Assess Send Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Assess Send Result": {
+        "main": [
+          [
+            {
+              "node": "Respond Success",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Scheduling Engine": {
+        "main": [
+          [
+            {
+              "node": "Update Conversation State",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Webhook HMAC": {
+        "main": [
+          [
+            {
+              "node": "HMAC OK?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HMAC OK?": {
+        "main": [
+          [
+            {
+              "node": "Process Inbound Core",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Respond HMAC Rejected",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Process Inbound Core": {
+        "main": [
+          [
+            {
+              "node": "Format Process Inbound",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Process Inbound": {
+        "main": [
+          [
+            {
+              "node": "Respond Success",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Flatten CRM Response": {
+        "main": [
+          [
+            {
+              "node": "Is Duplicate?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "4a6d87bf-71ae-4258-936d-c7b47f4117ab",
+    "activeVersionId": null,
+    "versionCounter": 9,
+    "triggerCount": 1,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-04-19T13:46:31.222Z",
+        "createdAt": "2026-04-19T13:46:31.222Z",
+        "role": "workflow:owner",
+        "workflowId": "uIcdWub0XdSpanna",
+        "projectId": "6w5qAmY0Cph7mpef",
+        "project": {
+          "updatedAt": "2026-04-19T13:46:12.988Z",
+          "createdAt": "2026-04-19T13:44:22.951Z",
+          "id": "6w5qAmY0Cph7mpef",
+          "name": "ten egta <sadeketr@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "0e7fa1cb-fa68-419b-bd32-054401b536b3"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Version 4a6d87bf",
+      "description": ""
+    }
+  },
+  {
+    "updatedAt": "2026-04-19T18:13:05.905Z",
+    "createdAt": "2026-04-19T18:12:28.266Z",
+    "id": "7KytbCMsDnllpb4G",
+    "name": "whatsapp-clinic-stability-layer",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "whatsapp",
+          "responseMode": "lastNode",
+          "options": {}
+        },
+        "id": "8390b39a-9676-4290-9af6-9a8faa4b7a2a",
+        "name": "Webhook Inbound",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -3600,
+          192
+        ],
+        "webhookId": "35266fdc-1e6f-4fb5-af66-6689ae109ac5"
+      },
+      {
+        "parameters": {
+          "jsCode": "const crypto = require('crypto');\nfunction timingSafeEqualHex(a, b) {\n  try {\n    const ba = Buffer.from(String(a).trim(), 'hex');\n    const bb = Buffer.from(String(b).trim(), 'hex');\n    if (ba.length !== bb.length) return false;\n    return crypto.timingSafeEqual(ba, bb);\n  } catch {\n    return false;\n  }\n}\nconst secret = String($env.N8N_WEBHOOK_HMAC_SECRET || '').trim();\nconst item = $input.first().json;\nconst headers = item.headers || {};\nconst sigHeader = headers['x-bridge-signature'] || headers['X-Bridge-Signature'] || '';\nconst m = /^sha256=(.+)$/i.exec(String(sigHeader));\nconst digestFromHeader = m ? m[1].trim() : '';\nconst body = item.body || {};\nconst clinic_id = typeof body.clinic_id === 'number' ? body.clinic_id : (Number.parseInt(String(body.clinic_id || '1').replace(/[^0-9]/g, ''), 10) || 1);\nconst sender = String(body.sender || body.from || '').trim();\nconst from = String(body.from || body.sender || '').trim();\nconst text = String(body.text || '');\nconst messageId = String(body.messageId || '');\nconst timestamp = body.timestamp;\nconst receivedAt = String(body.receivedAt || '');\nconst canonicalObj = { clinic_id, sender: sender || from, from: from || sender, text, messageId, timestamp, receivedAt };\nconst raw = JSON.stringify(canonicalObj);\nlet hmacOk = true;\nif (secret) {\n  const expected = crypto.createHmac('sha256', secret).update(raw, 'utf8').digest('hex');\n  hmacOk = timingSafeEqualHex(expected, digestFromHeader);\n}\nreturn [{ json: { ...item, hmacOk, hmacChecked: Boolean(secret) } }];"
+        },
+        "id": "487f393c-e934-4363-a15f-9f513ae6f7cf",
+        "name": "Verify Webhook HMAC",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -3488,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "hmac_ok",
+                "leftValue": "={{$json.hmacOk}}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "82bf15ec-0e1c-4f09-9256-74b296578ff0",
+        "name": "HMAC OK?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -3360,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "ok",
+                "value": false,
+                "type": "boolean"
+              },
+              {
+                "name": "error",
+                "value": "hmac_rejected",
+                "type": "string"
+              },
+              {
+                "name": "sent",
+                "value": false,
+                "type": "boolean"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "f1701c00-09c4-4879-8d76-b8c85411bd9f",
+        "name": "Respond HMAC Rejected",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -3360,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const hashText = (input) => {\n  const source = String(input || '');\n  let hash = 0;\n  for (let i = 0; i < source.length; i += 1) {\n    hash = ((hash << 5) - hash) + source.charCodeAt(i);\n    hash |= 0;\n  }\n  return `h${Math.abs(hash)}`;\n};\n\nconst body = $json.body || {};\nconst clinicIdRaw = String(body.clinic_id || '1').trim();\nconst clinic_id = Number.parseInt(clinicIdRaw.replace(/[^0-9]/g, ''), 10) || 1;\nconst workflowStartedAt = Date.now();\nconst from = String(body.from || body.sender || '').trim();\nconst text = String(body.text || '').trim();\nconst messageId = String(body.messageId || '');\nconst words = text.toLowerCase();\n\nconst bookingKeywords = ['حجز', 'موعد', 'appointment', 'book', 'reserve'];\nconst pricingKeywords = ['سعر', 'كم', 'تكلفة', 'price', 'cost'];\nconst emergencyKeywords = ['طوارئ', 'نزيف', 'ألم شديد', 'الم شديد', 'urgent', 'emergency'];\n\nconst clinicTimezone = 'Asia/Amman';\nconst startHour = 9;\nconst endHour = 21;\nconst nowHour = Number(new Date().toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: clinicTimezone }));\nconst outsideHours = nowHour < startHour || nowHour >= endHour;\n\nconst contains = (arr) => arr.some((k) => words.includes(k));\nconst pick = (arr) => arr[Math.floor(Math.random() * arr.length)];\n\nlet ruleIntent = 'GENERAL';\nif (contains(emergencyKeywords)) ruleIntent = 'URGENT';\nelse if (contains(bookingKeywords)) ruleIntent = 'BOOKING';\nelse if (contains(pricingKeywords)) ruleIntent = 'PRICING';\n\nconst priorityMap = { URGENT: 1, BOOKING: 2, PRICING: 3, GENERAL: 4 };\nconst rulePriority = priorityMap[ruleIntent] || 4;\nconst ruleHandoff = ruleIntent === 'URGENT';\n\nlet fallbackReply;\nif (outsideHours) {\n  fallbackReply = pick([\n    'وصلتنا رسالتك، الدوام حالياً مغلق. سنعاود الرد عند بدء الدوام بإذن الله.',\n    'شكراً لتواصلك، نحن خارج أوقات الدوام الآن وسنرد عليك أول ما يبدأ الدوام.'\n  ]);\n} else if (ruleIntent === 'URGENT') {\n  fallbackReply = pick([\n    'تم استلام رسالتك بشكل عاجل. إذا كانت الحالة طارئة جداً يرجى التواصل مباشرة مع الطوارئ، وسيتم تحويل رسالتك للفريق حالاً.',\n    'وصلتنا حالتك كأولوية. في حال وجود خطر مباشر يرجى التوجه للطوارئ فوراً، وسنتابع معك بأسرع وقت.'\n  ]);\n} else if (ruleIntent === 'BOOKING') {\n  fallbackReply = pick([\n    'أهلاً بك، تم استلام طلب الحجز. أرسل اسم المريض ورقم الهاتف والوقت المناسب وسننسق الموعد.',\n    'تم استلام طلب الموعد. من فضلك أرسل الاسم الثلاثي ورقم الهاتف والفترة المناسبة للحجز.'\n  ]);\n} else if (ruleIntent === 'PRICING') {\n  fallbackReply = pick([\n    'الأسعار تختلف حسب الحالة، أرسل تفاصيل أكثر وسنوضح التكلفة المناسبة.',\n    'حتى نحدد السعر بدقة، يرجى توضيح نوع الحالة أو الخدمة المطلوبة.'\n  ]);\n} else {\n  fallbackReply = pick([\n    'تم استلام رسالتك، وسيقوم فريق العيادة بالرد عليك قريباً.',\n    'وصلتنا رسالتك بنجاح، نشكرك على تواصلك وسنرد عليك بأقرب وقت.'\n  ]);\n}\n\nconst dedupeHash = hashText([from, messageId, text].join('::'));\n\nreturn [{\n  json: {\n    from,\n    to: from,\n    text,\n    messageId,\n    receivedAt: new Date().toISOString(),\n    outsideHours,\n    alertTo: '9639XXXXXXXXX@c.us',\n    dedupeHash,\n    ruleIntent,\n    rulePriority,\n    ruleHandoff,\n    fallbackReply,\n    clinic_id,\n    workflowStartedAt\n  }\n}];"
+        },
+        "id": "92a6e670-4768-49f9-89c6-919011978cef",
+        "name": "Normalize Input",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -3360,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "has_sender",
+                "leftValue": "={{$json.to}}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "6c057716-b7cf-4a5b-a903-384681302ed7",
+        "name": "Has Sender?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -3120,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ (($env.OPS_DASHBOARD_URL || 'http://host.docker.internal:3001').replace(/\\/$/, '')) + '/api/internal/crm/inbound-ingest' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SCHEDULING_SERVICE_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ clinic_id: $json.clinic_id, from: $json.from, text: $json.text, messageId: $json.messageId, dedupeHash: $json.dedupeHash, ruleIntent: $json.ruleIntent, rulePriority: $json.rulePriority, ruleHandoff: $json.ruleHandoff, fallbackReply: $json.fallbackReply, outsideHours: $json.outsideHours, receivedAt: $json.receivedAt, alertTo: $json.alertTo, workflowStartedAt: $json.workflowStartedAt }) }}",
+          "options": {
+            "timeout": 60000
+          }
+        },
+        "id": "1c5d1f07-fc54-401f-86d1-ad929a3868c2",
+        "name": "CRM Upsert Inbound",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -2880,
+          192
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO audit_logs (clinic_id, actor_type, action, entity_type, payload, created_at)\nVALUES (\n  COALESCE({{ $('Normalize Input').item.json.clinic_id }}, 1)::bigint,\n  'n8n',\n  'dlq_crm_upsert_inbound',\n  'workflow',\n  jsonb_build_object('hint', 'See execution data for error details'),\n  NOW()\n)\nRETURNING id;",
+          "options": {}
+        },
+        "id": "a0e93dd3-75db-4216-9de3-82401a9e4b11",
+        "name": "Audit DLQ",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -2880,
+          400
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const j = $input.first().json;\nconst b = j.body && typeof j.body === 'object' && !Array.isArray(j.body) ? j.body : {};\nreturn [{ json: { ...j, ...b } }];"
+        },
+        "id": "a031c6da-0707-47d7-827b-4f8309f38df7",
+        "name": "Flatten CRM Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2704,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "is_duplicate",
+                "leftValue": "={{$json.is_duplicate}}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "9e315f83-083e-4add-bc34-e0f30dbb6efb",
+        "name": "Is Duplicate?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -2640,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "ok",
+                "value": true,
+                "type": "boolean"
+              },
+              {
+                "name": "duplicate",
+                "value": true,
+                "type": "boolean"
+              },
+              {
+                "name": "dedupeHash",
+                "value": "={{$json.dedupeHash}}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "cd0a8686-1b2f-4272-8558-1ecbc801f19b",
+        "name": "Respond Duplicate",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -2400,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const crm = $input.first().json;\nasync function main() {\n  const base = $env.OPS_DASHBOARD_URL || \"http://host.docker.internal:3001\";\n  const token = $env.SCHEDULING_SERVICE_TOKEN || \"\";\n  if (!token) {\n    return {\n      ...crm,\n      finalIntent: crm.ruleIntent,\n      finalPriority: crm.rulePriority,\n      finalReply: crm.fallbackReply,\n      handoffRequired: crm.ruleHandoff,\n      decisionSource: \"rules\",\n      aiValid: false,\n      aiFailureReason: \"no_service_token\",\n    };\n  }\n  try {\n    const r1 = await fetch(base + \"/api/internal/scheduling/interpret\", {\n      method: \"POST\",\n      headers: { \"Content-Type\": \"application/json\", Authorization: \"Bearer \" + token },\n      body: JSON.stringify({ text: crm.text }),\n    });\n    let int;\n    try {\n      int = await r1.json();\n    } catch {\n      throw new Error(\"interpret_bad_json\");\n    }\n    if (!r1.ok || !int || !int.ok || !int.interpret) {\n      const msg = (int && (int.error || int.detail)) || \"interpret_http_\" + r1.status;\n      throw new Error(String(msg));\n    }\n    const intent = int.interpret.intent;\n    if (intent === \"urgent\") {\n      return {\n        ...crm,\n        finalIntent: \"URGENT\",\n        finalPriority: 1,\n        finalReply:\n          crm.fallbackReply ||\n          \"تم استلام حالتك كأولوية. إذا كانت الحالة طارئة جداً يرجى التواصل مع الطوارئ.\",\n        handoffRequired: true,\n        decisionSource: \"scheduling_interpret\",\n        aiValid: false,\n        aiFailureReason: \"n/a\",\n      };\n    }\n    if (intent !== \"booking\") {\n      return {\n        ...crm,\n        finalIntent: crm.ruleIntent,\n        finalPriority: crm.rulePriority,\n        finalReply: crm.fallbackReply,\n        handoffRequired: crm.ruleHandoff,\n        decisionSource: \"rules\",\n        aiValid: false,\n        aiFailureReason: \"not_booking\",\n      };\n    }\n    const r2 = await fetch(base + \"/api/internal/scheduling/slots\", {\n      method: \"POST\",\n      headers: { \"Content-Type\": \"application/json\", Authorization: \"Bearer \" + token },\n      body: JSON.stringify({\n        clinic_id: Number(crm.clinic_id),\n        conversation_id: Number(crm.conversation_id),\n        specialty: int.interpret.specialty || undefined,\n      }),\n    });\n    let slots;\n    try {\n      slots = await r2.json();\n    } catch {\n      throw new Error(\"slots_bad_json\");\n    }\n    if (!r2.ok || !slots || !slots.ok) {\n      const msg = (slots && (slots.error || slots.detail)) || \"slots_http_\" + r2.status;\n      throw new Error(String(msg));\n    }\n    const lines = (slots.reply_lines || []).join(\"\\n\");\n    const closed = slots.closed_message_ar;\n    const finalReply = lines\n      ? \"أهلاً بك، أقرب المواعيد المتاحة:\\n\" + lines + \"\\nأرسل رقم الخيار (1، 2، أو 3).\"\n      : closed || crm.fallbackReply;\n    return {\n      ...crm,\n      finalIntent: \"BOOKING\",\n      finalPriority: 2,\n      finalReply,\n      handoffRequired: false,\n      decisionSource: \"scheduling_engine\",\n      aiValid: false,\n      aiFailureReason: \"n/a\",\n      schedulingSlots: slots.slots,\n    };\n  } catch (e) {\n    return {\n      ...crm,\n      finalIntent: crm.ruleIntent,\n      finalPriority: crm.rulePriority,\n      finalReply: crm.fallbackReply,\n      handoffRequired: crm.ruleHandoff,\n      decisionSource: \"rules\",\n      aiValid: false,\n      aiFailureReason: String(e && e.message),\n    };\n  }\n}\nreturn main().then((j) => [{ json: j }]);\n"
+        },
+        "id": "c57ed1e8-8bfe-4225-bd62-6085610634c5",
+        "name": "Scheduling Engine",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2160,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "finalIntent",
+                "value": "={{$json.ruleIntent}}",
+                "type": "string"
+              },
+              {
+                "name": "finalPriority",
+                "value": "={{$json.rulePriority}}",
+                "type": "number"
+              },
+              {
+                "name": "finalReply",
+                "value": "={{$json.fallbackReply}}",
+                "type": "string"
+              },
+              {
+                "name": "handoffRequired",
+                "value": "={{$json.ruleHandoff}}",
+                "type": "boolean"
+              },
+              {
+                "name": "decisionSource",
+                "value": "rules",
+                "type": "string"
+              },
+              {
+                "name": "aiValid",
+                "value": false,
+                "type": "boolean"
+              },
+              {
+                "name": "aiFailureReason",
+                "value": "ai_bypassed",
+                "type": "string"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "id": "2f95c954-d451-436b-b152-92578014e0a0",
+        "name": "Rules Fallback",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -1920,
+          240
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE conversations\nSET state = CASE\n    WHEN '{{$json.finalIntent}}' = 'URGENT' OR {{$json.handoffRequired ? 'true' : 'false'}} THEN 'TRIAGE'\n    ELSE 'ACTIVE'\n  END,\n  updated_at = NOW()\nWHERE id = {{$json.conversation_id}} AND clinic_id = COALESCE({{$json.clinic_id}}, 1)::bigint\nRETURNING id, state;",
+          "options": {}
+        },
+        "id": "ac08a7db-1a80-4035-81e2-103b9c30ac08",
+        "name": "Update Conversation State",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -960,
+          144
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "handoff_or_urgent",
+                "leftValue": "={{$json.handoffRequired || $json.finalIntent === 'URGENT' || Number($json.finalPriority) === 1}}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "b6f5a1dd-4a48-4f2d-a6b9-1874635f75f8",
+        "name": "Decision Gate",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -720,
+          144
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "WITH new_case AS (\n  INSERT INTO cases (\n    clinic_id, patient_id, conversation_id, case_type, priority, status, summary, notes, source, opened_at, created_at, updated_at\n  ) VALUES (\n    COALESCE({{$json.clinic_id}}, 1)::bigint,\n    {{$json.patient_id}},\n    {{$json.conversation_id}},\n    '{{$json.finalIntent}}',\n    CASE {{$json.finalPriority}} WHEN 1 THEN 'high' WHEN 2 THEN 'normal' WHEN 3 THEN 'normal' ELSE 'low' END,\n    'open',\n    $${{$json.text}}$$,\n    'Created by stability workflow',\n    'n8n',\n    NOW(), NOW(), NOW()\n  )\n  RETURNING id\n)\nSELECT\n  (SELECT id FROM new_case) AS case_id,\n  COALESCE({{$json.clinic_id}}, 1)::bigint AS clinic_id,\n  {{$json.patient_id}}::bigint AS patient_id,\n  {{$json.conversation_id}}::bigint AS conversation_id,\n  '{{$json.from}}' AS \"from\",\n  $${{$json.text}}$$ AS \"text\",\n  '{{$json.finalIntent}}' AS \"finalIntent\",\n  {{$json.finalPriority}}::int AS \"finalPriority\",\n  $${{$json.finalReply || ''}}$$ AS \"finalReply\",\n  {{$json.handoffRequired ? 'true' : 'false'}} AS \"handoffRequired\",\n  '{{$json.decisionSource || \"rules\"}}' AS \"decisionSource\",\n  {{$json.aiValid ? 'true' : 'false'}} AS \"aiValid\",\n  '{{$json.alertTo || ''}}' AS \"alertTo\";",
+          "options": {}
+        },
+        "id": "354c52b8-f967-4ded-a7ec-17cbc8f44fd4",
+        "name": "Create Case",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          -480,
+          64
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "urgentAlertText",
+                "value": "=🚨 حالة تحتاج متابعة بشرية\\nالمريض: {{$json.from}}\\nالنوع: {{$json.finalIntent}}\\nالأولوية: {{$json.finalPriority}}\\nالنص: {{$json.text}}",
+                "type": "string"
+              },
+              {
+                "name": "replyText",
+                "value": "=تم تحويل رسالتك للفريق المختص وسيتم التواصل معك بأسرع وقت.",
+                "type": "string"
+              },
+              {
+                "name": "sendRetries",
+                "value": 0,
+                "type": "number"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "id": "89a379bb-bb63-4dc1-9205-e7528d1afbde",
+        "name": "Build Alert",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -240,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO alerts (\n  clinic_id, conversation_id, patient_id, alert_type, target, status, notes, payload, created_at\n) VALUES (\n  COALESCE({{$json.clinic_id}}, 1)::bigint,\n  {{$json.conversation_id}},\n  {{$json.patient_id}},\n  '{{$json.finalIntent}}',\n  '{{$json.alertTo}}',\n  'queued',\n  'stability workflow alert',\n  jsonb_build_object('decision_source', '{{$json.decisionSource}}'),\n  NOW()\n) RETURNING id;",
+          "options": {}
+        },
+        "id": "d0adedba-88f2-4764-bf50-a297e3bf0c0a",
+        "name": "Log Alert",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          0,
+          0
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "has_alert_target",
+                "leftValue": "={{$json.alertTo}}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "ccdf7690-3340-493a-8904-249f4e7f2675",
+        "name": "Has Alert Target?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          144
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ (($env.BRIDGE_SEND_URL || 'http://host.docker.internal:3100').replace(/\\/$/, '')) + '/send' }}",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\"to\":\"{{$json.alertTo}}\",\"text\":\"{{$json.urgentAlertText}}\"}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "1a32c82f-7883-4704-9cdb-07219c665699",
+        "name": "Send Urgent Alert",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          240,
+          80
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "replyText",
+                "value": "={{$json.finalReply}}",
+                "type": "string"
+              },
+              {
+                "name": "sendRetries",
+                "value": 0,
+                "type": "number"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "id": "53ee2740-3026-4d41-8514-0a6d45ea117d",
+        "name": "Prepare Reply",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -480,
+          240
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO messages (\n  clinic_id, conversation_id, patient_id, direction, text, intent, priority, is_urgent, dedup_skipped, source, payload, created_at\n) VALUES (\n  COALESCE({{$json.clinic_id}}, 1)::bigint,\n  {{$json.conversation_id}},\n  {{$json.patient_id}},\n  'outbound',\n  $${{$json.replyText}}$$,\n  '{{$json.finalIntent}}',\n  {{$json.finalPriority}},\n  {{$json.finalIntent === 'URGENT' ? 'true' : 'false'}},\n  false,\n  'n8n',\n  jsonb_build_object('decision_source', '{{$json.decisionSource}}', 'ai_used', {{$json.aiValid ? 'true' : 'false'}}, 'send_retries', {{$json.sendRetries || 0}}),\n  NOW()\n) RETURNING id;",
+          "options": {}
+        },
+        "id": "d0c6277a-e97f-488e-935d-194e137ad3ea",
+        "name": "CRM Log Outbound",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          480,
+          208
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "jBK7JKZzSMBi16hH",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ (($env.BRIDGE_SEND_URL || 'http://host.docker.internal:3100').replace(/\\/$/, '')) + '/send' }}",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\"to\":\"{{$json.from || $node['CRM Upsert Inbound'].json['from']}}\",\"text\":\"{{$json.replyText || $json.finalReply || $json.fallbackReply || $node['Prepare Reply'].json['replyText'] || $node['Rules Fallback'].json['finalReply'] || 'تم استلام رسالتك وسيتم الرد عليك قريباً.'}}\"}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "e99b6086-b8d5-4b32-9478-129f6c6106f9",
+        "name": "Send Reply via Bridge",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          720,
+          208
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.first().json;\nconst success = !item.error && (item.ok !== false);\nconst retries = Number(item.sendRetries || 0);\nreturn [{ json: { ...item, sendSucceeded: success, sendRetries: retries, sendFailureReason: success ? null : (item.error?.message || item.message || 'send_failed') } }];"
+        },
+        "id": "6eb5b12f-983c-4d48-9098-68bfc7e868dc",
+        "name": "Assess Send Result",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          960,
+          208
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "ok",
+                "value": "={{$json.sendSucceeded}}",
+                "type": "boolean"
+              },
+              {
+                "name": "intent",
+                "value": "={{$json.finalIntent}}",
+                "type": "string"
+              },
+              {
+                "name": "reply",
+                "value": "={{$json.replyText}}",
+                "type": "string"
+              },
+              {
+                "name": "decisionSource",
+                "value": "={{$json.decisionSource}}",
+                "type": "string"
+              },
+              {
+                "name": "sendRetries",
+                "value": "={{$json.sendRetries || 0}}",
+                "type": "number"
+              },
+              {
+                "name": "sendFailureReason",
+                "value": "={{$json.sendFailureReason || ''}}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "a75b3989-5d86-48de-b2b3-1b919ee543f8",
+        "name": "Respond Success",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          1200,
+          208
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "ok",
+                "value": false,
+                "type": "boolean"
+              },
+              {
+                "name": "sent",
+                "value": false,
+                "type": "boolean"
+              },
+              {
+                "name": "error",
+                "value": "Missing sender/from in inbound payload",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "1910433f-7e35-4dee-b619-2d267a9a26d3",
+        "name": "Respond Invalid Payload",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -2880,
+          352
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ (($env.OPS_DASHBOARD_URL || 'http://host.docker.internal:3001').replace(/\\/$/, '')) + '/api/internal/conversations/process-inbound' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SCHEDULING_SERVICE_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ clinic_id: typeof $json.body?.clinic_id === 'number' ? $json.body.clinic_id : (Number.parseInt(String($json.body?.clinic_id || '1').replace(/[^0-9]/g, ''), 10) || 1), from: String($json.body?.from || $json.body?.sender || '').trim(), text: String($json.body?.text || ''), messageId: String($json.body?.messageId || ''), receivedAt: String($json.body?.receivedAt || new Date().toISOString()), execute_send: true, send_urgent_alert: true, enqueue_on_bridge_failure: true }) }}",
+          "options": {
+            "timeout": 120000
+          }
+        },
+        "id": "d83f3dbd-5e43-4024-a9ca-c18a3e4dbf0a",
+        "name": "Process Inbound Core",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -3264,
+          192
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const row = $input.first().json;\nlet b = row;\nif (row && row.body && typeof row.body === 'object' && !Array.isArray(row.body)) b = row.body;\nconst ok = b.ok !== false && !b.error;\nconst dup = Boolean(b.duplicate);\nconst sendSucceeded = ok && (dup ? true : b.bridge_send_ok !== false);\nreturn [{ json: {\n  ok,\n  sent: sendSucceeded,\n  sendSucceeded,\n  finalIntent: String(b.finalIntent || ''),\n  replyText: String(b.reply_text || ''),\n  decisionSource: String(b.decision_source || ''),\n  sendRetries: 0,\n  sendFailureReason: String(b.bridge_send_error || b.error || ''),\n  duplicate: dup\n} }];"
+        },
+        "id": "17399928-cfd4-4170-be7d-5ef3dda4c0fc",
+        "name": "Format Process Inbound",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -3104,
+          192
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook Inbound": {
+        "main": [
+          [
+            {
+              "node": "Verify Webhook HMAC",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Input": {
+        "main": [
+          [
+            {
+              "node": "Has Sender?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Has Sender?": {
+        "main": [
+          [
+            {
+              "node": "CRM Upsert Inbound",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Respond Invalid Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "CRM Upsert Inbound": {
+        "main": [
+          [
+            {
+              "node": "Flatten CRM Response",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Audit DLQ",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Audit DLQ": {
+        "main": [
+          [
+            {
+              "node": "Respond Invalid Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Duplicate?": {
+        "main": [
+          [
+            {
+              "node": "Respond Duplicate",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Scheduling Engine",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Conversation State": {
+        "main": [
+          [
+            {
+              "node": "Decision Gate",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Decision Gate": {
+        "main": [
+          [
+            {
+              "node": "Create Case",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Prepare Reply",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create Case": {
+        "main": [
+          [
+            {
+              "node": "Build Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Alert": {
+        "main": [
+          [
+            {
+              "node": "Log Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Alert": {
+        "main": [
+          [
+            {
+              "node": "Has Alert Target?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Has Alert Target?": {
+        "main": [
+          [
+            {
+              "node": "Send Urgent Alert",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Send Reply via Bridge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Urgent Alert": {
+        "main": [
+          [
+            {
+              "node": "Send Reply via Bridge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Reply": {
+        "main": [
+          [
+            {
+              "node": "Send Reply via Bridge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "CRM Log Outbound": {
+        "main": [
+          [
+            {
+              "node": "Send Reply via Bridge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Reply via Bridge": {
+        "main": [
+          [
+            {
+              "node": "Assess Send Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Assess Send Result": {
+        "main": [
+          [
+            {
+              "node": "Respond Success",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Scheduling Engine": {
+        "main": [
+          [
+            {
+              "node": "Update Conversation State",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify Webhook HMAC": {
+        "main": [
+          [
+            {
+              "node": "HMAC OK?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HMAC OK?": {
+        "main": [
+          [
+            {
+              "node": "Process Inbound Core",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Respond HMAC Rejected",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Process Inbound Core": {
+        "main": [
+          [
+            {
+              "node": "Format Process Inbound",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Process Inbound": {
+        "main": [
+          [
+            {
+              "node": "Respond Success",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Flatten CRM Response": {
+        "main": [
+          [
+            {
+              "node": "Is Duplicate?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "4047f7eb-ab66-4893-bf02-5bcdc07a8fc2",
+    "activeVersionId": "4047f7eb-ab66-4893-bf02-5bcdc07a8fc2",
+    "versionCounter": 9,
+    "triggerCount": 1,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-04-19T18:12:28.270Z",
+        "createdAt": "2026-04-19T18:12:28.270Z",
+        "role": "workflow:owner",
+        "workflowId": "7KytbCMsDnllpb4G",
+        "projectId": "6w5qAmY0Cph7mpef",
+        "project": {
+          "updatedAt": "2026-04-19T13:46:12.988Z",
+          "createdAt": "2026-04-19T13:44:22.951Z",
+          "id": "6w5qAmY0Cph7mpef",
+          "name": "ten egta <sadeketr@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "0e7fa1cb-fa68-419b-bd32-054401b536b3"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Version 4047f7eb",
+      "description": ""
+    }
+  }
+]

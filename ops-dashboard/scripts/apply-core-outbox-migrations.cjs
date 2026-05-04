@@ -9,6 +9,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+require("./load-ops-env.cjs");
 const { Client } = require("pg");
 
 const defaultUrl = "postgresql://postgres:postgres@127.0.0.1:5435/clinicsaas";
@@ -19,6 +20,8 @@ const chain = [
   "004_core_outbox_dialogue.sql",
   "005_core_outbox_blocked_status.sql",
   "006_domain_events.sql",
+  "007_processed_events.sql",
+  "008_dead_letter_events.sql",
 ];
 
 async function main() {

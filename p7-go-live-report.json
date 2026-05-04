@@ -1,0 +1,27 @@
+{
+  "started_at": "2026-04-25T07:03:21.499Z",
+  "steps": [
+    {
+      "name": "smoke:p5",
+      "pass": true
+    },
+    {
+      "name": "ops:alerts:check",
+      "pass": true
+    },
+    {
+      "name": "validate:p6-ops",
+      "pass": true
+    },
+    {
+      "name": "data-integrity-check",
+      "pass": true
+    },
+    {
+      "name": "ops-dashboard unit tests",
+      "pass": true
+    }
+  ],
+  "ok": true,
+  "finished_at": "2026-04-25T07:03:37.465Z"
+}

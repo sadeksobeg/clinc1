@@ -37,6 +37,7 @@ export function ReplyForm({ conversationId }: { conversationId: string }) {
     <form onSubmit={onSubmit} className="mt-8 space-y-3 rounded-lg border border-slate-800 bg-slate-900/30 p-4">
       <label className="block text-sm text-slate-300">رد يدوي عبر الجسر</label>
       <textarea
+        id="tour-reply-textarea"
         className="min-h-[100px] w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -45,6 +46,7 @@ export function ReplyForm({ conversationId }: { conversationId: string }) {
       />
       {err ? <p className="text-sm text-red-400">{err}</p> : null}
       <button
+        id="tour-send-button"
         type="submit"
         disabled={busy}
         className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"

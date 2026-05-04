@@ -38,6 +38,25 @@ server {
   ssl_certificate     /etc/letsencrypt/live/n8n.example.com/fullchain.pem;
   ssl_certificate_key /etc/letsencrypt/live/n8n.example.com/privkey.pem;
 
+  # Extra protection layer for n8n editor (in addition to n8n built-in basic auth).
+  # Create file with: sudo htpasswd -c /etc/nginx/.htpasswd-n8n <admin-user>
+  auth_basic "Restricted n8n";
+  auth_basic_user_file /etc/nginx/.htpasswd-n8n;
+
+  # Keep webhook endpoints private to local bridge/proxy only.
+  # If you need external providers, replace this with a strict IP allowlist.
+  location ^~ /webhook/ {
+    allow 127.0.0.1;
+    allow ::1;
+    deny all;
+    proxy_pass http://clinic_n8n;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
   location / {
     proxy_pass http://clinic_n8n;
     proxy_http_version 1.1;

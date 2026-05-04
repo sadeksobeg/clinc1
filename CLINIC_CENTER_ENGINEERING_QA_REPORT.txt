@@ -1,0 +1,886 @@
+ENGINEERING + QA REPORT — Clinic Automation System (Clinic Center / apps-web)
+Date: 2026-04-28
+Authoring mode: codebase-driven analysis (architecture + UI flows + API mapping + DB impact + risks)
+
+============================================================
+0) Assumptions & Scope Boundaries
+============================================================
+- Scope is strictly the “Clinic Center” surfaces in `apps/web`:
+  - /dashboard, /inbox, /inbox/[id], /patients, /patients/[id], /appointments, /doctors, /settings, /billing, /analytics, /support, /ai-center
+- This report maps `apps/web` UI → `apps/web/app/api/ops/*` (BFF) → `apps/web/lib/ops-server.ts` → `ops-dashboard/app/api/internal/*` (internal APIs).
+- Where internal API responses were not fully read in this session, response shapes are inferred from:
+  - types in `apps/web/lib/ops-server.ts`
+  - naming conventions in existing endpoints
+  - existing scheduling + conversation logic in `ops-dashboard/lib/*`
+- “No fake data” principle:
+  - Any numbers shown must be backed by an API response OR clearly marked as “not available”.
+  - This report flags any “initial UI defaults” that may momentarily render non-real values.
+
+============================================================
+1) System Overview (Architecture + Components)
+============================================================
+1.1 High-level Architecture
+- Frontend (Clinic Center): `apps/web`
+  - Next.js App Router
+  - Server components for pages (data prefetch), client components for interactive workspaces.
+  - Protected paths enforced in `apps/web/middleware.ts` (redirect to /login or /billing or /platform).
+
+- Backend (Ops + business logic): `ops-dashboard`
+  - Next.js internal API under `ops-dashboard/app/api/internal/*`
+  - Domain logic under `ops-dashboard/lib/*`:
+    - Conversations orchestration: `lib/conversations/processInbound.ts`, `bookingDialogueFlow.ts`
+    - Scheduling: `lib/scheduling/slotService.ts`, availability engine, working hours guard
+    - Emergency decisioning: `lib/scheduling/emergencyDecisionEngine.ts`
+    - Billing lock: `lib/billing/localBilling.ts`
+    - Audit trail: `lib/auditTrail.ts`
+
+- Integration services:
+  - WhatsApp transport: `whatsapp-bridge` (client/transport layer)
+  - The “single source of truth” for reply logic is `ops-dashboard` (bridge can be configured to avoid duplicating routing menus).
+
+1.2 Data Flow (Clinic Center → Ops Dashboard)
+- User requests in `apps/web`:
+  - Browser → Next middleware validates session cookie `ops_session`.
+  - UI calls either:
+    - Server-side data fetch (server components) via `apps/web/lib/ops-server.ts`, OR
+    - Client-side fetch to BFF endpoints (`/api/ops/...`) using `fetchWithRetry`.
+
+- BFF (apps/web):
+  - `apps/web/lib/secure-api.ts` implements `callOpsApi(...)`:
+    - Injects internal service token: `Authorization: Bearer ${SCHEDULING_SERVICE_TOKEN}`
+    - Injects request correlation: `x-request-id`, `x-trace-id`
+    - Injects tenancy:
+      - `x-clinic-id` for clinic scope OR platform acting clinic.
+      - `x-platform-scope: true` for platform sessions.
+      - `x-user-id` from session.
+    - Safety: for platform sessions, blocks non-GET writes unless a target clinic is specified (body clinic_id) or acting clinic cookie exists.
+
+- Ops internal APIs:
+  - Receive the service token + headers.
+  - Must enforce authorization/tenancy based on `x-clinic-id` and/or explicit `clinic_id` query/body (critical for data isolation).
+
+1.3 Database (Operational impact)
+The Clinic Center surfaces touch these core tables (non-exhaustive):
+- Tenancy/Clinic configuration:
+  - `clinics`, `clinic_public_hours` (clinic hours), `staff_users` (admin accounts), clinic metadata JSONB
+- Scheduling:
+  - `doctors`, `doctor_working_hours`, `doctor_leaves`, `appointments`
+- Conversations/CRM:
+  - `conversations`, `conversation_messages` (or equivalent), `patients`
+- Emergency + ops:
+  - `cases`, `alerts`, `audit_logs`, `domain_events`, `core_outbox`
+- Billing:
+  - `clinic_local_subscriptions`, `clinic_payment_requests`, `billing_invoices`, `billing_receipts`, `billing_notification_log`
+
+============================================================
+2) Interface-by-Interface Deep Analysis (UX + Controls)
+============================================================
+2.1 /dashboard — “لوحة أداء العيادة”
+File: `apps/web/app/(app)/dashboard/page.tsx`
+
+Purpose
+- Executive snapshot for clinic operations:
+  - patient count, today appointments, pending replies, active doctors, AI automation rate.
+
+UI Elements
+- Header:
+  - AI handled % banner: derived from `fetchProductMetrics()`
+- KPI cards: `KpiCards` (metrics computed from real rows)
+- Charts/widgets: `ExecutiveCharts`, `DashboardWidgets`
+
+UX Flow (step-by-step)
+- Entry:
+  - If platform superadmin without acting clinic → shows a blocking card “اختر عيادة من Platform Switcher”.
+- Otherwise:
+  - Prefetch (server-side):
+    - Inbox rows, patients, upcoming appointments, product metrics.
+  - Render KPIs:
+    - totalPatients: `patients.length`
+    - pendingReplies: inbox rows where status === "open"
+    - activeDoctors: unique doctor_id from appointments
+    - todayAppointments: computed from starts_at date equality to local browser date (see risks below)
+    - aiSavedHours: derived from aiHandled / 12 heuristic (NOT a “fake number”, but a derived metric; still should be validated as acceptable).
+
+Expected Validation Rules
+- If any upstream fetch fails:
+  - Page still renders (empty arrays), but KPIs degrade silently.
+  - Recommendation: show “data unavailable” states per widget when fetch fails (see “Bugs/Risks”).
+
+Potential Failures / Edge Cases
+- Timezone mismatch:
+  - `todayAppointments` uses `new Date(a.starts_at).toDateString()` vs `new Date().toDateString()` which uses server runtime timezone (server component) at build-time request.
+  - If clinic timezone differs, “today” can be wrong.
+- Product metrics are global (not necessarily clinic-specific):
+  - Could mislead if metrics aggregate across all clinics (depends on ops implementation).
+
+APIs
+- Internal fetch via `apps/web/lib/ops-server.ts`:
+  - GET `/api/internal/inbox?clinic_id=...`
+  - GET `/api/internal/patients?clinic_id=...`
+  - GET `/api/internal/appointments/upcoming?clinic_id=...&days=...`
+  - GET `/api/internal/metrics/product`
+
+DB Impact
+- Read-only.
+
+------------------------------------------------------------
+2.2 /inbox — “مركز إدارة المحادثات”
+Files:
+- `apps/web/app/(app)/inbox/page.tsx` (server prefetch)
+- `apps/web/features/inbox/inbox-workspace.tsx` (client workspace)
+
+Purpose
+- Operational conversation management:
+  - triage (urgent/booking/unread)
+  - view thread messages
+  - templates, AI suggestion, manual reply
+  - “Decision + Execute” workflow and feedback loop
+
+Core UI Elements (inferred from workspace)
+- Left panel:
+  - search input
+  - tabs: all / unread / urgent / bookings
+  - list rows with badges:
+    - confirmed emergency, uncertain emergency, booking, needs review
+- Main panel:
+  - thread messages
+  - reply textarea
+  - actions:
+    - send reply
+    - choose template key
+    - AI suggest
+    - decision timeline panel (auditability)
+    - execute suggested action
+    - feedback modal/panel (correct decision + severity + medical signals + patient context)
+    - doctor assignment (select)
+
+UX Flow (step-by-step)
+- Initial load:
+  - Server selects first conversation from inbox list and fetches detail+messages.
+  - Client workspace receives:
+    - `rows`, `selectedId`, `detail`, `messages`
+- Triage behavior:
+  - Sorting uses rank:
+    - confirmed emergency → top
+    - uncertain emergency
+    - unread
+    - rest by last_message_at
+- Operator actions:
+  - Reply:
+    - validate non-empty text
+    - POST to `/api/ops/conversations/[id]/reply`
+  - Template:
+    - GET template or apply template (BFF endpoint exists)
+  - AI Suggest:
+    - calls `/api/ops/conversations/[id]/ai-suggest` (exists)
+  - Execute decision:
+    - `/api/ops/decision/execute`, `/api/ops/decision/regenerate`, `/api/ops/decision/feedback`
+  - Conversation actions:
+    - `/api/ops/conversations/[id]/actions` for archive/close etc (exists)
+
+Validation Rules (expected)
+- Reply: non-empty trimmed text.
+- Feedback:
+  - correctedDecision in {EMERGENCY, BOOKING, NORMAL, UNKNOWN}
+  - correctedSeverity numeric string → should be 1..5 or similar (not fully enforced client-side; verify server-side schema).
+- Assign doctor: must be a known doctor id; enforce server-side.
+
+Functional Risks / Race Conditions
+- Concurrency:
+  - Two agents replying simultaneously can interleave messages; require idempotency keys (present in API).
+  - Suggested action execution may become “blocked” if appointment already exists or slot unavailable; UI already localizes blocked reasons.
+- Stale data:
+  - Server prefetched detail for first conversation; client actions may mutate state without full refetch unless router.refresh is used consistently.
+- Deterministic UX:
+  - Uses Radix Select/Tabs in multiple places; historically can break in some browser/layout combinations (aria-hidden focus trap). If this happens inside Inbox it becomes a critical operational blocker.
+
+APIs (BFF in apps/web/app/api/ops/*)
+- Conversations:
+  - POST `/api/ops/conversations/[id]/reply`
+  - GET/POST `/api/ops/conversations/[id]/template`
+  - POST `/api/ops/conversations/[id]/ai-suggest`
+  - POST `/api/ops/conversations/[id]/actions`
+- Decisions:
+  - POST `/api/ops/decision/execute`
+  - POST `/api/ops/decision/regenerate`
+  - POST `/api/ops/decision/feedback`
+- Doctors list for assignment:
+  - GET `/api/ops/doctors`
+
+DB Impact (ops-dashboard side)
+- Read/write:
+  - `conversations`, `conversation_messages` (reply insertion)
+  - `appointments` (if executing booking)
+  - `audit_logs` + `domain_events` for traceability
+
+------------------------------------------------------------
+2.3 /patients — “ملف المرضى”
+Files:
+- `apps/web/app/(app)/patients/page.tsx`
+- `apps/web/features/patients/patients-table.tsx`
+
+Purpose
+- Searchable, paginated patients registry with operational flags.
+
+UI Elements
+- Search input (global filter)
+- Table columns:
+  - name (link to /patients/[id])
+  - WhatsApp digits extracted from chat_id
+  - chat_id truncated
+  - last_seen_at formatted
+  - status badge
+  - flags: VIP / blacklist
+- “Quick card” side panel:
+  - first visible row summary + “فتح الملف الكامل”
+
+UX Flow
+- Server fetches patient list (limit=150).
+- Client renders table, pagination controls (client-side).
+
+Validation
+- Search is purely client-side; no server validation.
+
+Failure Modes
+- Large clinic:
+  - Only 150 patients loaded; search misses beyond first 150.
+  - Operationally risky: operator may believe patient doesn’t exist.
+
+APIs
+- Internal via `ops-server.ts`:
+  - GET `/api/internal/patients?clinic_id=...&limit=150`
+
+DB Impact
+- Read-only on `patients`.
+
+------------------------------------------------------------
+2.4 /patients/[id] — “بطاقة الهوية التشغيلية”
+Files:
+- `apps/web/app/(app)/patients/[id]/page.tsx`
+- `apps/web/features/patients/patient-identity-actions.tsx`
+
+Purpose
+- Operational identity card for a patient:
+  - correct WhatsApp identity, status, flags, appointments summary, quick actions.
+
+UI Elements
+- Header:
+  - Breadcrumb back to /patients
+  - PatientIdentityActions:
+    - Copy WhatsApp digits
+    - Copy chat_id
+    - Open conversation (if last_conversation_id exists)
+    - Create appointment (links to /appointments?patient_id=...)
+- Card: Basic data
+  - WhatsApp digits + chat_id
+  - phone_e164 only if present and different from WhatsApp digits
+  - status badge + VIP/blacklist
+  - first_seen_at / last_seen_at
+- Card: Notes (notes + insurance_note)
+- Section: last appointments list + emergency badge when source_channel == "whatsapp_emergency"
+
+UX Flow
+- Server:
+  - validate numeric id; notFound otherwise.
+  - fetch patient detail + appointments summary.
+  - compute waDigits from chat_id locally.
+  - lastConversationId from patient payload (backend should provide).
+- Client actions:
+  - Copy buttons use `navigator.clipboard` with toast feedback.
+
+Validation
+- Copy buttons disabled if digits unavailable.
+- Open conversation disabled if lastConversationId null.
+
+Failure Modes
+- lastConversationId coupling:
+  - If backend doesn’t always set last_conversation_id, “فتح المحادثة” becomes unavailable even if conversation exists.
+  - Suggestion: provide fallback lookup route by patient_id.
+
+APIs
+- Internal via `ops-server.ts`:
+  - GET `/api/internal/patients/{id}?clinic_id=...`
+
+DB Impact
+- Read-only.
+
+------------------------------------------------------------
+2.5 /appointments — “تقويم المواعيد”
+Files:
+- `apps/web/app/(app)/appointments/page.tsx` (server prefetch)
+- `apps/web/features/appointments/appointments-board.tsx` (client)
+
+Purpose
+- Create/cancel/reschedule appointments; check availability suggestions.
+
+UI Elements (AppointmentsBoard)
+- Tabs: day/week/month (currently visual toggles; content not differentiated in code snippet)
+- Filters:
+  - doctorFilter (Radix Select) built from unique appointment doctor_name strings
+- Action buttons:
+  - “تصدير” (no handler in shown code; likely non-functional → should be flagged)
+  - “حجز سريع” (no handler in shown code; likely non-functional → should be flagged)
+- Quick booking form:
+  - doctor select (from doctors list)
+  - patient select (patients slice(0,150))
+  - datetime-local input
+  - “المواعيد المتاحة” → availability check
+  - “إنشاء حجز”
+  - availabilityText area output
+- Calendar grid:
+  - 5 days forward, slots fixed 9 hours (9..17) — this is a strong constraint; may not match real working hours.
+- Drag & drop reschedule:
+  - optimistic UI, then PATCH reschedule
+
+UX Flow (step-by-step)
+- Entry:
+  - server prefetch:
+    - upcoming appointments 30 days
+    - doctors rows
+    - patients rows
+  - initial form state:
+    - prefill patient_id / doctor_id via query params if present
+    - else select first doctor/patient from arrays
+- Availability check:
+  - POST `/api/ops/appointments/availability` with doctor_id and limit
+  - display `reply_lines` or `closed_message_ar`
+- Create booking:
+  - POST `/api/ops/appointments/create`
+  - requires doctor_id, patient_id, starts_at (ISO)
+  - idempotency_key uses `web-${Date.now()}`
+- Cancel:
+  - PATCH `/api/ops/appointments/[id]/cancel`
+- Reschedule:
+  - PATCH `/api/ops/appointments/[id]/reschedule` with new starts/ends
+
+Validation Rules (current + expected)
+- UI enforces presence of doctor/patient/datetime.
+- Missing critical validation:
+  - No timezone enforcement: datetime-local is interpreted in browser local timezone, then converted to ISO; clinic timezone may differ.
+  - No server-side validation visible here (must exist upstream).
+
+Edge Cases / Concurrency
+- Optimistic reschedule:
+  - On failure it reverts to old appointments snapshot, but uses a closed-over `appointments` value (risk of reverting to stale list if there were intervening changes).
+- Calendar hours are static (9..17):
+  - Real clinic/doctor hours can be different; UI may mislead operators (shows empty slots outside this range as “not supported”).
+
+APIs (BFF)
+- POST `/api/ops/appointments/availability`
+- POST `/api/ops/appointments/create`
+- PATCH `/api/ops/appointments/[id]/cancel`
+- PATCH `/api/ops/appointments/[id]/reschedule`
+
+DB Impact
+- Writes:
+  - `appointments` insert/update/status updates
+  - likely `audit_logs` for administrative actions (should be verified upstream)
+
+------------------------------------------------------------
+2.6 /doctors — “الأطباء”
+File: `apps/web/app/(app)/doctors/page.tsx`
+
+Purpose
+- Operational summary of doctors and their upcoming load.
+
+UI Elements
+- Doctor cards:
+  - name + specialty
+  - bookings count from upcoming appointments
+  - unique patients count (Set of patient_id)
+  - share of appointments (%)
+- Empty state: “لا توجد أطباء…”
+
+Functional Notes
+- Data source is real:
+  - doctor list from `fetchDoctorsRows`
+  - bookings computed by joining appointment doctor_id.
+
+APIs
+- GET `/api/internal/doctors?clinic_id=...`
+- GET `/api/internal/appointments/upcoming?clinic_id=...&days=30`
+
+DB Impact
+- Read-only.
+
+------------------------------------------------------------
+2.7 /settings — “الإعدادات”
+Files:
+- `apps/web/app/(app)/settings/page.tsx`
+- `apps/web/features/settings/settings-tabs.tsx`
+
+Purpose
+- Clinic identity + scheduling hours + WhatsApp channel metadata + doctor hours + security switch.
+
+UI Structure
+- Tabs:
+  - clinic: clinicName, whatsappNumber, timezone, language
+  - hours: clinic working hours (7 days)
+  - whatsapp: (not fully read in snippet window; exists)
+  - doctors: list doctors + edit working hours per doctor
+  - security: require2FA toggle
+- Health widget:
+  - deep health from `/api/ops/system/health/deep` (non-blocking)
+
+UX Flow
+- On mount:
+  - GET `/api/ops/clinic-settings`
+  - Sets form values from real data (clinic + metadata)
+  - Sets workingHours from working_hours if returned
+  - Loads holidays from clinic.metadata.holidays
+  - Loads require_2fa from metadata
+- Refresh health + doctors:
+  - GET `/api/ops/doctors`
+  - GET `/api/ops/system/health/deep`
+- Doctor hours:
+  - GET `/api/ops/doctors/[id]/hours` → builds 7-day grid
+  - PATCH `/api/ops/doctors/[id]/hours` to persist
+
+Validation Rules (implemented)
+- Holidays must be ISO date-only YYYY-MM-DD.
+- Working hours:
+  - opens and closes must be HH:MM
+  - opens < closes
+
+Critical “No fake data” risk
+- `useForm` defaultValues are hardcoded:
+  - clinicName: “عيادة ميد أوتو”
+  - whatsappNumber: “+20123456789”
+  - timezone/language defaults
+- workingHours initial state is also hardcoded for all days.
+- Even though these are replaced after GET, they may render briefly:
+  - In production-grade systems, this is perceived as “fake data flashing”.
+  - Recommendation: render skeleton/empty until GET completes.
+
+APIs
+- BFF:
+  - GET/PATCH `/api/ops/clinic-settings`
+  - GET `/api/ops/doctors`
+  - GET/PATCH `/api/ops/doctors/[id]/hours`
+  - GET `/api/ops/system/health/deep`
+- Upstream internal (ops-dashboard):
+  - internal clinics settings endpoint writes `clinic_public_hours` + clinic metadata (and audit log).
+
+DB Impact
+- Writes:
+  - `clinics` (name/timezone/metadata JSONB)
+  - `clinic_public_hours` (DELETE then INSERT per weekday)
+  - `doctor_working_hours` (doctor hours)
+  - `audit_logs` (“clinic.settings.patch”)
+
+Data Consistency Risks
+- Replace-all strategy for clinic_public_hours:
+  - DELETE then INSERT is correct inside a transaction (ops-dashboard route does BEGIN/COMMIT).
+  - Risk only if upstream fails mid-loop without rollback; current code rolls back on txError (good).
+
+------------------------------------------------------------
+2.8 /billing — “الفوترة”
+Files:
+- `apps/web/app/(app)/billing/page.tsx`
+- `apps/web/features/billing/manual-billing-workspace.tsx`
+
+Purpose
+- View local billing snapshot and submit payment requests manually.
+
+UI Elements
+- Snapshot metrics cards:
+  - pricing (now shown as “حسب لقطة الفوترة”)
+  - doctor_count, extra_doctors, estimated_total_usd, status, next_renewal_at
+- Payment request form:
+  - method select: cash / shamcash / manual_transfer (native select)
+  - amount (USD)
+  - receipt_url required for transfer methods
+  - reference_code optional, note
+  - submit request
+- Status banners:
+  - trial/trial_expiring banner
+  - billing locked banner (automation stopped)
+
+UX Flow
+- On mount:
+  - GET `/api/platform/context` (to know platform vs clinic)
+  - If platform superadmin without acting clinic:
+    - show toast error “اختر عيادة…” and return (no snapshot)
+  - GET `/api/ops/billing/local` for snapshot + requests + invoices
+- Submit payment request:
+  - POST `/api/ops/billing/local` with required fields
+
+Validation Rules
+- amount must be > 0
+- receiptUrl required for transfer methods
+- platform superadmin must select acting clinic
+
+Operational Risks
+- `amountUsd` now defaults to empty; if snapshot load fails, user may submit invalid/0 amount (UI validates amount > 0; okay).
+- Receipt URL is a free text; should be validated as URL format server-side to avoid garbage.
+
+DB Impact
+- Writes:
+  - `clinic_payment_requests` insert
+  - subsequent admin review affects `billing_invoices` / `billing_receipts` (outside this screen)
+
+------------------------------------------------------------
+2.9 /analytics — “التحليلات”
+Files:
+- `apps/web/app/(app)/analytics/page.tsx`
+- `apps/web/features/analytics/analytics-charts.tsx`
+
+Purpose
+- Operational analytics based on real data:
+  - appointments by day (line + bar)
+  - product automation rate
+
+UI Elements
+- Header with AI handled % banner
+- Charts:
+  - line chart, bar chart for `dayRows`
+  - product metric card “نسبة الرد الآلي”
+
+UX Flow
+- Server:
+  - fetch upcoming appointments (30 days)
+  - fetch product metrics
+  - compute dayRows map by day key (first 14)
+
+Risks
+- Similar to dashboard:
+  - timezone/day aggregation depends on `formatDayKey` behavior.
+- Product metrics clinic-scoping uncertainty.
+
+APIs
+- GET `/api/internal/appointments/upcoming?clinic_id=...`
+- GET `/api/internal/metrics/product`
+
+DB Impact
+- Read-only.
+
+------------------------------------------------------------
+2.10 /support — “الدعم”
+File: `apps/web/app/(app)/support/page.tsx`
+
+Purpose
+- Lightweight support ticket cockpit (for clinic operators or support agents).
+
+UI Elements
+- Header with SLA analytics (breach rate, avg response, avg resolution)
+- Tickets list:
+  - select ticket
+  - refresh button
+- Thread:
+  - messages list
+  - textarea
+  - send reply OR create ticket
+- Actions:
+  - assign, resolve, recompute SLA
+  - escalate (requires reason)
+- Create new ticket section with subject input
+
+UX Flow
+- On mount: loadTickets() which fetches:
+  - GET `/api/ops/support/tickets`
+  - GET `/api/ops/support/analytics`
+- On ticket select:
+  - GET `/api/ops/support/messages?ticket_id=...`
+- Create ticket:
+  - POST `/api/ops/support/tickets`
+- Send message:
+  - POST `/api/ops/support/messages`
+- Set status:
+  - PATCH `/api/ops/support/tickets`
+- Escalate:
+  - POST `/api/ops/support/escalate` with reason (required)
+
+Validation
+- subject + text required to create ticket (enforced by disabled button + early return)
+- message text required to send
+- reason required to escalate
+
+Failure Modes
+- Network/API failure:
+  - now surfaces Arabic error banner.
+
+DB Impact
+- Writes on ticket/message tables (exact names depend on ops implementation).
+- SLA recompute likely updates ticket metrics fields.
+
+------------------------------------------------------------
+2.11 /ai-center — “مركز الذكاء الاصطناعي”
+File: `apps/web/app/(app)/ai-center/page.tsx`
+
+Purpose
+- Operational AI health snapshot for clinic workspace (product-level metrics).
+
+UI Elements
+- Metric cards:
+  - metrics availability (connected/unavailable)
+  - model name (OLLAMA_MODEL or “غير محدد”)
+  - inbound total count (period)
+  - automation rate
+- Panels:
+  - suggested replies: explicitly says “no embedded static UI”
+  - failures/handoff: shows handoffRate and automationRate
+
+Risks
+- Metrics may be global.
+- If modelName isn’t set, shows “غير محدد” (correct).
+
+APIs
+- GET `/api/internal/metrics/product`
+
+DB Impact
+- Read-only.
+
+============================================================
+3) Functional Validation Summary (Pass/Fail by Interface)
+============================================================
+Legend:
+- YES: works in principle with existing APIs + validations
+- PARTIAL: works but has operational gaps (UX, scalability, correctness)
+- RISK: likely to fail in real clinic usage without fixes
+
+- /dashboard: PARTIAL
+  - Correctness risk: timezone “today” + global metrics.
+  - Resilience risk: silent empty renders on upstream failure.
+
+- /inbox: PARTIAL/RISK (operationally critical)
+  - High complexity; concurrency + Radix components reliability + stale data refresh.
+  - Requires deterministic, always-working UI.
+
+- /patients: PARTIAL
+  - Limit=150 is a hard ceiling; not suitable for real clinic scale.
+
+- /patients/[id]: YES
+  - Strong operational identity view; depends on backend returning last_conversation_id.
+
+- /appointments: PARTIAL/RISK
+  - Timezone + datetime-local conversion.
+  - Calendar grid fixed hours 9..17 regardless of configured working hours.
+  - “Export/Quick booking” buttons may be non-functional (verify).
+
+- /doctors: YES (as summary page)
+  - Good “no fake data” compliance.
+
+- /settings: PARTIAL/RISK
+  - “fake data flashing” due to hardcoded defaults before API load.
+  - Otherwise API mapping + validation are strong.
+
+- /billing: YES (for manual operations)
+  - Works; relies on acting clinic selection for platform.
+
+- /analytics: PARTIAL
+  - Global metrics + timezone/day grouping risk.
+
+- /support: PARTIAL
+  - Good baseline, but ensure permissioning and multi-role access (clinic vs platform support) is correct upstream.
+
+- /ai-center: PARTIAL
+  - Not a full AI governance center; but operational snapshot is acceptable.
+
+============================================================
+4) API & Backend Mapping (Concrete paths + payload patterns)
+============================================================
+4.1 BFF pattern (apps/web)
+- Client UI calls `/api/ops/...` with session cookies.
+- BFF checks session with `/api/auth/me` (cookie-based).
+- BFF proxies to ops-dashboard internal API using service token + x-clinic-id header.
+
+4.2 Example APIs (from inspected routes)
+
+A) Appointments availability
+- UI: `AppointmentsBoard.checkAvailability()`
+- Request: POST `/api/ops/appointments/availability`
+  - body: { doctor_id: number, specialty?: string, conversation_id?: number, limit?: number }
+- BFF handler: `apps/web/app/api/ops/appointments/availability/route.ts`
+  - forces `clinic_id = user.clinic_id`
+  - proxies to internal scheduling slots via `fetchDoctorSlots(...)`
+- Expected response:
+  - { ok: true, slots?: [...], reply_lines?: string[], closed_message_ar?: string }
+  - failure: { ok: false, error: string }
+
+B) Create appointment
+- UI: `AppointmentsBoard.createBooking()`
+- Request: POST `/api/ops/appointments/create`
+  - body: { doctor_id, patient_id, starts_at, conversation_id?, idempotency_key? }
+- BFF: `apps/web/app/api/ops/appointments/create/route.ts`
+  - forces clinic_id from session
+  - proxies to internal confirm endpoint
+- Response:
+  - ok + appointment_id or duplicate + error/code
+
+C) Clinic settings
+- UI: `SettingsTabs` GET/PATCH
+- GET `/api/ops/clinic-settings` → returns clinic + working_hours
+- PATCH `/api/ops/clinic-settings`
+  - body: { name, timezone, holidays, working_hours, metadata }
+- Upstream internal writes:
+  - `clinic_public_hours`, `clinics.metadata`, audit log.
+
+D) Conversation reply
+- UI: inbox send
+- POST `/api/ops/conversations/{id}/reply`
+  - body: { text, idempotency_key? }
+- BFF validates non-empty text, injects clinic_id.
+
+============================================================
+5) Database Impact (Writes + Consistency)
+============================================================
+5.1 Write operations triggered from Clinic Center
+- /settings:
+  - `clinics` UPDATE (name/timezone/metadata)
+  - `clinic_public_hours` replace-all in tx
+  - `doctor_working_hours` replace-all per doctor (inferred)
+  - `audit_logs` insert
+
+- /appointments:
+  - `appointments` INSERT (create)
+  - `appointments` UPDATE (reschedule/cancel)
+  - Potentially: `processed_events`/idempotency tracking (internal)
+
+- /inbox:
+  - `conversation_messages` INSERT (reply)
+  - `conversations.routing` UPDATE (decision snapshots, selected clinic routing, feedback)
+  - `cases`/`alerts` updates on emergencies
+
+- /billing:
+  - `clinic_payment_requests` INSERT
+  - downstream review flows affect invoices/receipts.
+
+5.2 Inconsistency risks
+- Patient identity:
+  - Using chat_id digits as WhatsApp identity is correct, but must ensure phone_e164 isn’t polluted by chat_id (was previously addressed).
+- Clinic hours replace-all:
+  - Correct under transaction; ensure unique constraint on (clinic_id, weekday) to prevent duplicates.
+- Appointment reschedule optimistic UI:
+  - UI can show temporary state; must reconcile with server truth after refresh.
+
+============================================================
+6) Bug Detection (Critical) — Issues Likely Before Production
+============================================================
+6.1 UI/UX Bugs (high priority)
+- Settings “fake data flashing”:
+  - `SettingsTabs` renders hardcoded defaults before API returns.
+  - Impact: violates “No fake data” perception; can confuse operators.
+  - Fix: render skeleton until GET completes; defaultValues should be empty.
+
+- Appointments non-functional buttons:
+  - “تصدير” and “حجز سريع” appear without handler in read window.
+  - Impact: dead buttons reduce trust.
+  - Fix: wire to real export endpoint or disable with tooltip “غير متاح حالياً”.
+
+- Appointment calendar hours are static:
+  - Grid fixed to 9..17; does not respect clinic/doctor hours.
+  - Impact: operators may believe clinic is unavailable.
+  - Fix: drive slots grid from clinic_public_hours / doctor_working_hours.
+
+- Patients list scalability:
+  - limit=150 hard cap in server fetch.
+  - Impact: real clinics will exceed; search becomes misleading.
+  - Fix: server-side pagination + search endpoint.
+
+6.2 Logic Bugs / Correctness
+- “Today” computations:
+  - dashboard uses server runtime date; clinic timezone can differ.
+  - Fix: compute “today” using clinic timezone from settings.
+
+- Platform vs clinic writes:
+  - BFF blocks platform writes without target clinic or acting clinic cookie (good).
+  - Risk: some endpoints may accept `clinic_id` in body and override header; must standardize precedence.
+
+6.3 Security Issues (AuthZ / Data leakage)
+- Service token pattern:
+  - apps/web uses a powerful internal token for all ops calls.
+  - Security relies on:
+    - strict validation in ops-dashboard internal APIs of x-clinic-id/x-platform-scope
+    - not trusting client-provided clinic_id
+  - Failure mode: a single internal API that trusts client body `clinic_id` could lead to cross-tenant data access.
+  - Recommendation: enforce tenancy only from headers, ignore body clinic_id except in platform-controlled endpoints with permission checks.
+
+- Support endpoints exposure:
+  - /support is available even when billing_locked (middleware allows).
+  - Ensure support data is scoped properly and not exposing other clinics when platform scope is used.
+
+6.4 Performance bottlenecks
+- Inbox workspace:
+  - Potentially heavy: lots of state, decision timeline building, large messages list.
+  - Risk: slow rendering for long threads; needs virtualization and paging for messages.
+
+============================================================
+7) Operational Readiness (Clinic Reality Check)
+============================================================
+Verdict: “جاهز لتجربة Pilot مُتحكم بها” وليس “جاهز كمنتج عيادة عالمي” بدون hardening إضافي.
+
+What can fail in daily operations
+- Appointment time correctness (timezone) → wrong bookings
+- Inbox UI reliability (Radix focus issues) → inability to respond during emergencies
+- Patients cap (150) → missing patients in search
+- Settings default flashing → operator distrust + misconfiguration
+
+Operational must-haves before real deployment
+- Timezone correctness end-to-end for:
+  - appointment creation
+  - “today” counters
+  - WhatsApp slot display (already improved in ops-dashboard with Arabic formatting)
+- Deterministic UI components in critical paths (Inbox, Appointments, Settings).
+- Server-side pagination and query for patients + conversations.
+- Strict tenancy enforcement in all internal APIs.
+
+============================================================
+8) Improvement Recommendations (Actionable)
+============================================================
+8.1 UX improvements (low risk, high impact)
+- Settings:
+  - show skeleton while loading; remove default demo values from first paint.
+- Appointments:
+  - disable or implement “Export / Quick booking” buttons.
+  - generate calendar grid from working hours.
+- Patients:
+  - add server pagination + search by:
+    - name
+    - wa digits
+    - chat_id
+- Inbox:
+  - add explicit “refresh thread” and show “last updated” timestamp.
+  - add message list virtualization.
+
+8.2 Architectural hardening
+- Standardize tenancy:
+  - internal APIs must rely on `x-clinic-id` as single source of truth.
+  - if body includes clinic_id, treat it as validation only (must match header) unless platform endpoint with explicit authorization.
+- Idempotency:
+  - unify idempotency keys for all writes (reply, create appointment, cancel/reschedule).
+- Observability:
+  - expand web trace emission to include response status and duration (currently only “start” is emitted).
+
+8.3 Automation proposals (optional, after stabilization)
+- Automated smoke runner:
+  - scripted checks for:
+    - clinic settings save/load
+    - doctor hours save/load
+    - appointment create/cancel/reschedule
+    - inbox reply + decision execute
+- Role-based UX:
+  - hide support/billing operations based on role/perms rather than only billing lock.
+
+============================================================
+9) Appendix — Key Source Files Referenced
+============================================================
+- Security / tenancy:
+  - `apps/web/middleware.ts`
+  - `apps/web/lib/secure-api.ts`
+  - `apps/web/lib/serverSession.ts`
+- Clinic pages:
+  - `apps/web/app/(app)/*/page.tsx`
+- Workspaces:
+  - `apps/web/features/inbox/inbox-workspace.tsx`
+  - `apps/web/features/appointments/appointments-board.tsx`
+  - `apps/web/features/settings/settings-tabs.tsx`
+  - `apps/web/features/billing/manual-billing-workspace.tsx`
+- Internal fetching/types:
+  - `apps/web/lib/ops-server.ts`
+- Ops scheduling & WhatsApp:
+  - `ops-dashboard/lib/scheduling/slotService.ts`
+  - `ops-dashboard/lib/conversations/processInbound.ts`
+  - `ops-dashboard/app/api/internal/clinics/[id]/settings/route.ts`
+
+END OF REPORT
+

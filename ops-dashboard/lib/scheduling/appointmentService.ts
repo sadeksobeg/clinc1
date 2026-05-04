@@ -52,6 +52,9 @@ export async function confirmAppointmentTx(client: PoolClient, params: ConfirmPa
 
   await client.query("BEGIN");
   try {
+    if (params.conversationId) {
+      await client.query(`SELECT id FROM conversations WHERE id = $1 FOR UPDATE`, [params.conversationId]);
+    }
     await client.query(`SELECT id FROM doctors WHERE id = $1 AND clinic_id = $2 FOR UPDATE`, [
       params.doctorId,
       params.clinicId,

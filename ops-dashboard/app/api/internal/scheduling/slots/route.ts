@@ -11,7 +11,8 @@ const bodySchema = z.object({
   doctor_id: z.number().int().positive().optional(),
   specialty: z.string().max(120).optional(),
   conversation_id: z.number().int().positive().optional(),
-  limit: z.number().int().min(1).max(10).optional(),
+  limit: z.number().int().min(1).max(24).optional(),
+  day_key: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export async function POST(req: Request) {
@@ -44,12 +45,17 @@ export async function POST(req: Request) {
       doctorId: parsed.data.doctor_id,
       specialty: parsed.data.specialty,
       limit: parsed.data.limit,
+      dayKey: parsed.data.day_key,
     });
     const tzR = await pool.query(`SELECT timezone FROM clinics WHERE id = $1`, [clinicId]);
     const tz = (tzR.rows[0]?.timezone as string) || "Asia/Amman";
+    const todayIso = DateTime.utc().setZone(tz).toISODate() ?? "";
     const reply_lines = slots.map((s, i) => {
       const t = DateTime.fromISO(s.starts_at, { zone: "utc" }).setZone(tz);
-      return `${i + 1}) ${s.doctor_name} — ${t.toFormat("yyyy-LL-dd HH:mm")}`;
+      const dIso = t.toISODate() ?? "";
+      const dayLabel =
+        dIso === todayIso ? "اليوم" : t.setLocale("ar").toFormat("ccc d LLL");
+      return `${i + 1}) ${s.doctor_name} — ${dayLabel} · ${t.toFormat("HH:mm")}`;
     });
     let closed_message_ar: string | undefined;
     if (slots.length === 0) {

@@ -14,6 +14,12 @@ export function OpsNav({ email, role }: { email?: string; role?: string }) {
           <Link href="/analytics" className="text-slate-300 hover:text-white">
             تحليلات
           </Link>
+          <Link href="/billing" className="text-slate-300 hover:text-white">
+            الفوترة
+          </Link>
+          <Link href="/account" className="text-slate-300 hover:text-white">
+            الحساب
+          </Link>
           {sec ? (
             <Link href="/secretary" className="text-slate-300 hover:text-white">
               السكرتيرة

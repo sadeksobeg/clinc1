@@ -4,6 +4,7 @@ import type { InboundIngestRow } from "@/lib/crm/inboundIngest";
 import { interpretInboundText } from "@/lib/scheduling/interpret";
 import type { InterpretResult } from "@/lib/scheduling/types";
 import { explainNoSlots, findNextSlots } from "@/lib/scheduling/slotService";
+import { formatDateTimeAr } from "./whatsappTime";
 import type { NormalizedInboundRules } from "./normalizeInbound";
 
 export type SchedulingDecision = {
@@ -65,7 +66,7 @@ export async function runSchedulingDecision(
     const tz = (tzR.rows[0]?.timezone as string) || "Asia/Amman";
     const reply_lines = slots.map((s, i) => {
       const t = DateTime.fromISO(s.starts_at, { zone: "utc" }).setZone(tz);
-      return `${i + 1}) ${s.doctor_name} — ${t.toFormat("yyyy-LL-dd HH:mm")}`;
+      return `${i + 1}) ${s.doctor_name} — ${formatDateTimeAr(t)}`;
     });
     let closed_message_ar: string | undefined;
     if (slots.length === 0) {

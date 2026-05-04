@@ -1,0 +1,53 @@
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.106.1
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./ops-observability/otel-collector/config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+    environment:
+      OTEL_DEPLOYMENT_ENV: ${OTEL_DEPLOYMENT_ENV:-local}
+    depends_on:
+      - loki
+      - tempo
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.1.1
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./ops-observability/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./ops-observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    ports:
+      - "3002:3000"
+    volumes:
+      - ./ops-observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - loki
+      - tempo
+    restart: unless-stopped
+
+volumes:
+  loki_data:
+  tempo_data:
+  grafana_data:

@@ -1,0 +1,117 @@
+name: Release Gates
+
+# Heavy integration gates that spin up Postgres and run root smoke scripts.
+# Scheduled nightly on `main` and runnable on demand; not a blocker on every PR.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "ops-dashboard/**"
+      - "apps/web/**"
+      - "scripts/**"
+      - "whatsapp-bridge/sql/**"
+      - ".github/workflows/release-gates.yml"
+
+jobs:
+  release-gates:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5435/clinic_ops"
+      POSTGRES_ADMIN_URL: "postgresql://postgres:postgres@127.0.0.1:5435/postgres"
+      JWT_SECRET: "release-gates-jwt-secret-at-least-32-chars-long"
+      SCHEDULING_SERVICE_TOKEN: "release-gates-service-token-32-characters-long!!"
+      OPS_DASHBOARD_URL: "http://127.0.0.1:3001"
+      OPS_BASE_URL: "http://127.0.0.1:3001"
+      SKIP_OPS_DASHBOARD_TESTS: "true"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5435:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            ops-dashboard/package-lock.json
+            apps/web/package-lock.json
+      - name: Install ops-dashboard
+        working-directory: ops-dashboard
+        run: npm ci
+      - name: Install apps/web
+        working-directory: apps/web
+        run: npm ci
+      - name: Provision clinic_ops database
+        working-directory: ops-dashboard
+        run: npm run db:provision-local-ops
+      - name: Seed local super admin
+        working-directory: ops-dashboard
+        run: node scripts/seed-super-admin.cjs superadmin@local.test "ReleaseGate12345!" "JBSWY3DPEHPK3PXP"
+      - name: Start ops-dashboard (background)
+        working-directory: ops-dashboard
+        run: |
+          npm run build
+          (npm run start &) &&
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:3001/api/internal/system/health \
+              -H "Authorization: Bearer $SCHEDULING_SERVICE_TOKEN" && break || sleep 2;
+          done
+      - name: Start apps/web (background)
+        working-directory: apps/web
+        run: |
+          npm run build
+          (npm run start &) &&
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:3000 > /dev/null && break || sleep 2;
+          done
+      - name: Run e2e go-live smoke
+        run: npm run e2e:go-live-smoke
+      - name: Run P7 go-live gate
+        run: npm run gate:p7
+        continue-on-error: true
+      - name: Install Playwright smoke suite
+        working-directory: e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+      - name: Run Playwright smoke suite
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: "http://127.0.0.1:3000"
+          E2E_LOGIN_EMAIL: ${{ secrets.E2E_LOGIN_EMAIL }}
+          E2E_LOGIN_PASSWORD: ${{ secrets.E2E_LOGIN_PASSWORD }}
+          E2E_LOGIN_OTP: ${{ secrets.E2E_LOGIN_OTP }}
+        run: npm test
+        continue-on-error: true
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          if-no-files-found: ignore
+      - name: Upload release-gates artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gates-reports
+          path: |
+            p7-go-live-report.json
+            e2e-go-live-report.json
+          if-no-files-found: ignore

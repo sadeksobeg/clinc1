@@ -13,11 +13,15 @@ export function repromptChooseDoctor(): string {
 }
 
 export function repromptChooseSlot(maxIx: number): string {
-  return `اختر رقم الموعد من القائمة (1 إلى ${maxIx}) لتأكيد الحجز.`;
+  return `اختر رقم الموعد من القائمة (1 إلى ${maxIx}) لتأكيد الحجز، أو اكتب وقتًا مثل: 5:00.\nأوامر: 0 رجوع، مواعيد أخرى، تغيير اليوم.`;
 }
 
 export function handoffToSecretary(): string {
   return "سأحوّل طلبك لفريق السكرتارية لمتابعة أفضل. شكراً لتفهمك، وسيتواصل معك أحد الزملاء قريباً.";
+}
+
+export function askPatientFullName(): string {
+  return "يرجى إرسال الاسم الكامل للمريض كما يظهر في الهوية أو الملف (ثلاثة أحرف على الأقل) لإكمال الحجز.";
 }
 
 export function chooseClinicIntro(lines: string): string {
@@ -29,7 +33,7 @@ export function chooseDoctorIntro(lines: string): string {
 }
 
 export function slotListIntro(lines: string): string {
-  return `أقرب المواعيد المتاحة:\n${lines}\nأرسل رقم الخيار (1، 2، أو 3) لتأكيد الحجز.`;
+  return `أقرب المواعيد المتاحة:\n${lines}\nأرسل رقم الخيار لتأكيد الحجز، أو اكتب وقتًا مثل: 5:00.\nأوامر: 0 رجوع، مواعيد أخرى، تغيير اليوم.`;
 }
 
 export function singleSlotConfirmLine(whenLabel: string, doctorName: string): string {

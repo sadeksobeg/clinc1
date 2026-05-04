@@ -36,6 +36,7 @@ export function ConversationActions({
   return (
     <div className="mb-6">
       <button
+        id="tour-close-button"
         type="button"
         disabled={busy}
         onClick={() => void closeConv()}

@@ -50,7 +50,12 @@ export async function POST(req: Request) {
     if (!result.ok && result.error === "missing_sender") {
       return NextResponse.json({ ...result, correlation_id: correlationId }, { status: 400 });
     }
-    return NextResponse.json({ ...result, correlation_id: correlationId });
+    const status =
+      result.queued &&
+      (result.defer_reason === "lock_contended" || result.defer_reason === "conversation_lock_contended")
+        ? 202
+        : 200;
+    return NextResponse.json({ ...result, correlation_id: correlationId }, { status });
   } catch (e) {
     incProductMetric("process_inbound_error_total");
     observeProcessInboundLatencyMs(Date.now() - t0);

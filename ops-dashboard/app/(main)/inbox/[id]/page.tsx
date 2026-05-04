@@ -3,11 +3,18 @@ import { notFound, redirect } from "next/navigation";
 import { getPool } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { ConversationActions } from "./ConversationActions";
+import { ConversationTourCoach } from "./ConversationTourCoach";
 import { ReplyForm } from "./ReplyForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function ConversationPage({ params }: { params: { id: string } }) {
+export default async function ConversationPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams?: { tour?: string; step?: string };
+}) {
   const session = await getSession();
   if (!session?.clinicId) redirect("/login");
 
@@ -50,6 +57,9 @@ export default async function ConversationPage({ params }: { params: { id: strin
   );
 
   const canAct = session.role !== "viewer";
+  const tour = searchParams?.tour === "1";
+  const rawStep = Number(searchParams?.step ?? "2");
+  const tourStep = Number.isFinite(rawStep) && rawStep >= 2 ? rawStep : 2;
 
   return (
     <main>
@@ -68,6 +78,7 @@ export default async function ConversationPage({ params }: { params: { id: strin
         ) : null}
       </div>
 
+      {tour && canAct ? <ConversationTourCoach conversationId={String(c.id)} step={tourStep} /> : null}
       {canAct ? <ConversationActions conversationId={String(c.id)} initialStatus={c.status} /> : null}
 
       <section className="space-y-3">

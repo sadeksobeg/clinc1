@@ -1,6 +1,7 @@
 # Local production stack: PostgreSQL + n8n (+ optional bridge runs on host for Chrome)
 # Usage: docker compose -f docker-compose.clinic.yml up -d
 # n8n: http://localhost:5678  | Postgres: localhost:5435 (host) / postgres:5432 (internal)
+# Secrets: copy .env.example → .env in repo root (gitignored). Defaults in compose are dev-only.
 
 services:
   redis:
@@ -8,7 +9,7 @@ services:
     container_name: clinic-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   postgres:
     image: postgres:16-alpine
@@ -16,10 +17,11 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # Local default matches ops-dashboard/.env.example (override in `.env` for real secrets)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: clinicsaas
     ports:
-      - "5435:5432"
+      - "127.0.0.1:5435:5432"
     volumes:
       - clinic_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -36,11 +38,20 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "5678:5678"
+      - "127.0.0.1:5678:5678"
     environment:
+      # Code node reads $env.* (HMAC secret, etc.); n8n 2.x may block env in Code unless false
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      # Code node "Verify Webhook HMAC" uses require('crypto') — required on self‑hosted n8n 2.x+
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-clinicadmin}
+      # Local default password matches user above; set N8N_BASIC_AUTH_PASSWORD in `.env` for production
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-clinicadmin}
       - WEBHOOK_URL=http://localhost:5678/
       - GENERIC_TIMEZONE=Asia/Amman
       # Clinic Scheduling Engine (node "Scheduling Engine" in workflow)
@@ -50,8 +61,36 @@ services:
       - N8N_WEBHOOK_HMAC_SECRET=${N8N_WEBHOOK_HMAC_SECRET:-}
       # n8n → bridge /send (HTTP Request nodes)
       - BRIDGE_SEND_URL=${BRIDGE_SEND_URL:-http://host.docker.internal:3100}
+      - BRIDGE_SEND_API_TOKEN=${BRIDGE_SEND_API_TOKEN:-}
+      - WA_ALERT_URGENT_TO=${WA_ALERT_URGENT_TO:-}
     volumes:
       - clinic_n8n_data:/home/node/.n8n
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  billing-reminders-job:
+    image: curlimages/curl:8.10.1
+    container_name: clinic-billing-reminders-job
+    restart: unless-stopped
+    environment:
+      OPS_DASHBOARD_URL: ${OPS_DASHBOARD_URL:-http://host.docker.internal:3001}
+      SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:-}
+      BILLING_REMINDER_INTERVAL_SECONDS: ${BILLING_REMINDER_INTERVAL_SECONDS:-900}
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        while true; do
+          if [ -n "$$SCHEDULING_SERVICE_TOKEN" ]; then
+            curl -fsS -X POST \
+              -H "Authorization: Bearer $$SCHEDULING_SERVICE_TOKEN" \
+              "$$OPS_DASHBOARD_URL/api/internal/billing/reminders/run" \
+              || echo "billing-reminders-job: tick failed"
+          else
+            echo "billing-reminders-job: SCHEDULING_SERVICE_TOKEN is empty; skipping tick"
+          fi
+          sleep "$$BILLING_REMINDER_INTERVAL_SECONDS"
+        done
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

@@ -42,7 +42,8 @@ describe("pickFirstFreeSlots", () => {
         end: DateTime.fromObject({ year: 2026, month: 4, day: 18, hour: 16, minute: 15 }, { zone: z }).toUTC(),
       },
     ];
-    const picked = pickFirstFreeSlots(z, [day], hours, 15, busyUtc, 2);
+    const nowUtc = DateTime.fromObject({ year: 2026, month: 4, day: 18, hour: 15, minute: 0 }, { zone: z }).toUTC();
+    const picked = pickFirstFreeSlots(z, [day], hours, 15, busyUtc, 2, nowUtc, 2);
     expect(picked.length).toBeGreaterThanOrEqual(1);
     const first = picked[0].startUtc.setZone(z);
     expect(first.hour).toBe(16);

@@ -4,7 +4,12 @@ export type OpsJwtPayload = JWTPayload & {
   sub: string;
   email?: string;
   role?: string;
+  scope?: "clinic" | "platform";
   clinicId?: number;
+  billingStatus?: "trial" | "trial_expiring" | "trial_expired" | "active" | "past_due" | "grace" | "suspended" | "cancelled";
+  billingLocked?: boolean;
+  trialEndsAt?: string | null;
+  tokenVersion?: number;
 };
 
 function readSecretKey(): Uint8Array | null {
@@ -17,7 +22,12 @@ export async function signOpsToken(payload: {
   sub: string;
   email: string;
   role: string;
-  clinicId: number;
+  scope?: "clinic" | "platform";
+  clinicId?: number;
+  billingStatus?: "trial" | "trial_expiring" | "trial_expired" | "active" | "past_due" | "grace" | "suspended" | "cancelled";
+  billingLocked?: boolean;
+  trialEndsAt?: string | null;
+  tokenVersion?: number;
 }) {
   const key = readSecretKey();
   if (!key) {
@@ -26,7 +36,12 @@ export async function signOpsToken(payload: {
   return new SignJWT({
     email: payload.email,
     role: payload.role,
-    clinicId: payload.clinicId,
+    scope: payload.scope || "clinic",
+    clinicId: payload.clinicId ?? null,
+    billingStatus: payload.billingStatus,
+    billingLocked: payload.billingLocked,
+    trialEndsAt: payload.trialEndsAt ?? null,
+    tokenVersion: payload.tokenVersion ?? 1,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)

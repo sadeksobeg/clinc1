@@ -10,6 +10,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+require("./load-ops-env.cjs");
 const { Client } = require("pg");
 
 const defaultUrl = "postgresql://postgres:postgres@127.0.0.1:5435/clinicsaas";

@@ -22,7 +22,11 @@ export async function setConversationSelectedClinic(
 ): Promise<void> {
   await pool.query(
     `UPDATE conversations
-     SET routing = COALESCE(routing, '{}'::jsonb) || jsonb_build_object('selected_clinic_id', to_jsonb($2::bigint)),
+     SET routing = COALESCE(routing, '{}'::jsonb)
+         || jsonb_build_object(
+           'selected_clinic_id', to_jsonb($2::bigint),
+           'clinic_selection_locked', to_jsonb(true)
+         ),
          updated_at = NOW()
      WHERE id = $1`,
     [conversationId, clinicId],
@@ -36,7 +40,11 @@ export async function setConversationSelectedClinicTx(
 ): Promise<void> {
   await client.query(
     `UPDATE conversations
-     SET routing = COALESCE(routing, '{}'::jsonb) || jsonb_build_object('selected_clinic_id', to_jsonb($2::bigint)),
+     SET routing = COALESCE(routing, '{}'::jsonb)
+         || jsonb_build_object(
+           'selected_clinic_id', to_jsonb($2::bigint),
+           'clinic_selection_locked', to_jsonb(true)
+         ),
          updated_at = NOW()
      WHERE id = $1`,
     [conversationId, clinicId],

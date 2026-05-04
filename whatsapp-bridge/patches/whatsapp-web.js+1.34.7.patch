@@ -1,0 +1,34 @@
+diff --git a/node_modules/whatsapp-web.js/src/Client.js b/node_modules/whatsapp-web.js/src/Client.js
+--- a/node_modules/whatsapp-web.js/src/Client.js
++++ b/node_modules/whatsapp-web.js/src/Client.js
+@@ -1305,11 +1305,26 @@
+     /**
+      * Returns the version of WhatsApp Web currently being run
+      * @returns {Promise<string>}
+      */
+-    async getWWebVersion() {
+-        return await this.pupPage.evaluate(() => {
+-            return window.Debug.VERSION;
+-        });
++    async getWWebVersion() {
++        const maxAttempts = 8;
++        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
++            try {
++                return await this.pupPage.evaluate(() => {
++                    return window.Debug.VERSION;
++                });
++            } catch (e) {
++                const msg = String(e?.message || e);
++                const transient =
++                    msg.includes('Execution context was destroyed') ||
++                    msg.includes('Target closed') ||
++                    msg.includes('Protocol error');
++                if (!transient || attempt === maxAttempts) {
++                    throw e;
++                }
++                await new Promise((r) => setTimeout(r, 200 * attempt));
++            }
++        }
+     }
+ 
+     async setDeviceName(deviceName, browserName) {

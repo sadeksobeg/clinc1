@@ -42,5 +42,22 @@ export async function POST(req: Request) {
     const code = res.code === "overlap" ? 409 : 400;
     return NextResponse.json({ ok: false, error: res.error, code: res.code }, { status: code });
   }
+  if (parsed.data.conversation_id) {
+    await pool.query(
+      `UPDATE conversations
+       SET routing = COALESCE(routing, '{}'::jsonb) || $1::jsonb,
+           updated_at = NOW()
+       WHERE id = $2 AND clinic_id = $3`,
+      [
+        JSON.stringify({
+          manual_override_at: new Date().toISOString(),
+          manual_override_by: `staff:${parsed.data.staff_user_id}`,
+          suggested_actions: [],
+        }),
+        parsed.data.conversation_id,
+        parsed.data.clinic_id,
+      ],
+    );
+  }
   return NextResponse.json({ ok: true, appointment_id: res.appointment_id, duplicate: res.duplicate ?? false });
 }

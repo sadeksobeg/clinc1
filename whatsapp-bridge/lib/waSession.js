@@ -66,6 +66,194 @@ function createWaSessionManager(config, ctx) {
     heartbeatTimer: null,
   };
 
+  // Simple multi-tenant routing state (per WhatsApp chat)
+  // Stages: "choose_clinic" -> "ready"
+  // (We can extend later to specialty/doctor selection when needed.)
+  const routingByChat = new Map();
+  const clinicCache = { at: 0, rows: [] };
+  const doctorsCacheByClinic = new Map(); // clinicId -> { at, rows }
+
+  function parseChoiceIndex(text) {
+    const v = String(text || "").trim();
+    const n = Number.parseInt(v.replace(/[^\d]/g, ""), 10);
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function authHeaders() {
+    const token = String(config.schedulingServiceToken || "").trim();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  async function fetchClinics() {
+    const now = Date.now();
+    if (clinicCache.rows.length && now - clinicCache.at < 30_000) return clinicCache.rows;
+    if (!config.schedulingServiceToken) return [];
+    const base = String(config.opsDashboardUrl || "http://127.0.0.1:3001").replace(/\/$/, "");
+    const res = await axios.get(`${base}/api/internal/scheduling/clinics`, { headers: authHeaders(), timeout: 12_000 });
+    const data = res?.data;
+    const rows = data && data.ok === true && Array.isArray(data.clinics) ? data.clinics : [];
+    clinicCache.at = now;
+    clinicCache.rows = rows.map((c) => ({
+      id: Number(c?.id || c?.clinic_id || 0),
+      name: String(c?.name || c?.clinic_name || "").trim(),
+    })).filter((c) => Number.isFinite(c.id) && c.id > 0 && c.name);
+    return clinicCache.rows;
+  }
+
+  async function fetchDoctors(clinicId) {
+    const now = Date.now();
+    const cached = doctorsCacheByClinic.get(clinicId);
+    if (cached?.rows?.length && now - cached.at < 30_000) return cached.rows;
+    if (!config.schedulingServiceToken) return [];
+    const base = String(config.opsDashboardUrl || "http://127.0.0.1:3001").replace(/\/$/, "");
+    const res = await axios.get(`${base}/api/internal/doctors?clinic_id=${encodeURIComponent(String(clinicId))}`, {
+      headers: authHeaders(),
+      timeout: 12_000,
+    });
+    const data = res?.data;
+    const rows = data && data.ok === true && Array.isArray(data.rows) ? data.rows : [];
+    const normalized = rows.map((d) => ({
+      id: Number(d?.id || 0),
+      display_name: String(d?.display_name || "").trim(),
+      specialty: String(d?.specialty || "عام").trim() || "عام",
+      is_active: Boolean(d?.is_active),
+    })).filter((d) => Number.isFinite(d.id) && d.id > 0 && d.display_name);
+    doctorsCacheByClinic.set(clinicId, { at: now, rows: normalized });
+    return normalized;
+  }
+
+  async function fetchWorkingHours(clinicId) {
+    if (!config.schedulingServiceToken) return [];
+    const base = String(config.opsDashboardUrl || "http://127.0.0.1:3001").replace(/\/$/, "");
+    const res = await axios.get(`${base}/api/internal/clinics/${encodeURIComponent(String(clinicId))}/settings`, {
+      headers: authHeaders(),
+      timeout: 12_000,
+    });
+    const data = res?.data;
+    const rows = data && data.ok === true && Array.isArray(data.working_hours) ? data.working_hours : [];
+    return rows
+      .map((r) => ({
+        weekday: Number(r?.weekday),
+        is_closed: Boolean(r?.is_closed),
+        opens_at: r?.opens_at ? String(r.opens_at).slice(0, 5) : null,
+        closes_at: r?.closes_at ? String(r.closes_at).slice(0, 5) : null,
+      }))
+      .filter((x) => Number.isFinite(x.weekday) && x.weekday >= 0 && x.weekday <= 6);
+  }
+
+  function formatWorkingHours(hours) {
+    if (!hours || !hours.length) return "";
+    const names = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+    const lines = hours
+      .slice()
+      .sort((a, b) => a.weekday - b.weekday)
+      .map((h) => {
+        const day = names[h.weekday] || `يوم ${h.weekday}`;
+        if (h.is_closed) return `- ${day}: مغلق`;
+        const o = h.opens_at || "—";
+        const c = h.closes_at || "—";
+        return `- ${day}: ${o} - ${c}`;
+      });
+    return ["ساعات العمل:", ...lines].join("\n");
+  }
+
+  function formatClinicMenu(clinics) {
+    const lines = clinics.slice(0, 12).map((c, i) => `(${i + 1}) ${c.name}`);
+    return [
+      "اختر العيادة:",
+      ...lines,
+      "",
+      "أرسل رقم العيادة من القائمة.",
+    ].join("\n");
+  }
+
+  function formatModeMenu(clinicName) {
+    return [
+      `تم اختيار: ${clinicName}`,
+      "",
+      "كيف تريد البحث عن الطبيب؟",
+      "(1) حسب التخصص",
+      "(2) حسب اسم الطبيب",
+      "",
+      "أرسل 1 أو 2. (للرجوع أرسل 0)",
+    ].join("\n");
+  }
+
+  function formatSpecialtyMenu(specialties) {
+    const lines = specialties.slice(0, 12).map((s, i) => `(${i + 1}) ${s}`);
+    return [
+      "اختر التخصص:",
+      ...lines,
+      "",
+      "أرسل رقم التخصص. (للرجوع أرسل 0)",
+    ].join("\n");
+  }
+
+  function formatDoctorMenu(doctors, title) {
+    const list = doctors.filter((d) => d.is_active !== false);
+    const lines = list.slice(0, 12).map((d, i) => `(${i + 1}) ${d.display_name} — ${d.specialty || "عام"}`);
+    return [
+      title || "اختر الطبيب:",
+      ...lines,
+      "",
+      "أرسل رقم الطبيب. (للرجوع أرسل 0)",
+    ].join("\n");
+  }
+
+  async function maybeHandleRouting(msg, text) {
+    if (!config.waRoutingMenus) return false;
+    // If no token, fall back to fixed clinic_id behavior
+    if (!config.schedulingServiceToken) return false;
+
+    const chatId = msg.from;
+    const t = String(text || "").trim();
+    const choice = parseChoiceIndex(t);
+    const rec = routingByChat.get(chatId) || { stage: "choose_clinic" };
+
+    // Global reset/back
+    if (t === "0") {
+      routingByChat.set(chatId, { stage: "choose_clinic" });
+      const clinics = await fetchClinics();
+      await queueDirectSend(chatId, clinics.length ? formatClinicMenu(clinics) : "لا توجد عيادات متاحة الآن.", "routing_reset");
+      return true;
+    }
+
+    if (rec.stage === "choose_clinic") {
+      const clinics = await fetchClinics();
+      if (!clinics.length) {
+        await queueDirectSend(chatId, "الخدمة غير جاهزة (لا يمكن تحميل العيادات الآن). حاول بعد قليل.", "routing_no_clinics");
+        return true;
+      }
+      if (!Number.isFinite(choice) || choice <= 0 || choice > clinics.length) {
+        await queueDirectSend(chatId, formatClinicMenu(clinics), "routing_prompt_clinic");
+        return true;
+      }
+      const selected = clinics[choice - 1];
+      // Immediately bind the conversation to the selected clinic and continue.
+      routingByChat.set(chatId, { stage: "ready", clinicId: selected.id, clinicName: selected.name });
+      const hours = await fetchWorkingHours(selected.id).catch(() => []);
+      const hoursBlock = formatWorkingHours(hours);
+      await queueDirectSend(
+        chatId,
+        [
+          `تم اختيار العيادة: ${selected.name}`,
+          hoursBlock ? `\n${hoursBlock}` : "",
+          "",
+          "اكتب الآن ما تريد (مثال):",
+          "- حجز",
+          "- موعد",
+          "- الأسعار",
+          "",
+          "للرجوع واختيار عيادة أخرى أرسل 0.",
+        ].join("\n"),
+        "routing_clinic_selected_ready",
+      );
+      return true;
+    }
+
+    return false;
+  }
+
   function shouldSkipDuplicateInbound(chatId, text) {
     const fingerprint = buildTextFingerprint(text);
     if (!fingerprint) return false;
@@ -210,7 +398,9 @@ function createWaSessionManager(config, ctx) {
   }
 
   async function forwardToN8n(msg, text) {
-    const clinicIdNum = Number.parseInt(String(config.clinicId).replace(/[^0-9]/g, ""), 10) || 1;
+    const clinicIdNum =
+      Number.parseInt(String(config.clinicId).replace(/[^0-9]/g, ""), 10) ||
+      1;
     const bodyObj = {
       clinic_id: clinicIdNum,
       sender: msg.from,
@@ -475,6 +665,15 @@ function createWaSessionManager(config, ctx) {
       console.log(`[inbound] from=${msg.from} text=${text}`);
       logEvent("inbound_received", { from: msg.from, normalizedFrom, text });
 
+      // Multi-clinic selection flow (clinic -> specialty/doctor)
+      try {
+        const handled = await maybeHandleRouting(msg, text);
+        if (handled) return;
+      } catch (e) {
+        await queueDirectSend(msg.from, "حدث خطأ أثناء اختيار العيادة/الطبيب. أرسل 0 لإعادة المحاولة.", "routing_error");
+        return;
+      }
+
       if (ctx.alertUrgentTo && isUrgentText(text, config.urgentKeywords)) {
         const urgentNotice =
           `تنبيه طوارئ\n` +
@@ -504,7 +703,7 @@ function createWaSessionManager(config, ctx) {
     console.log(`[bridge] headless mode: ${config.waHeadless}`);
     const puppeteerOptions = {
       headless: config.waHeadless,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", ...config.waPuppeteerExtraArgs],
     };
     if (executablePath) {
       puppeteerOptions.executablePath = executablePath;

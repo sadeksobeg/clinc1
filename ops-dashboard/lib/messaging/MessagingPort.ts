@@ -7,6 +7,8 @@ export type MessagingSendInput = {
   policy: BridgeSendPolicy;
   /** Propagated to bridge as X-Correlation-Id for log alignment */
   correlationId?: string;
+  /** For P7 WhatsApp safety (per-clinic windows). */
+  clinicId?: number | null;
 };
 
 /**

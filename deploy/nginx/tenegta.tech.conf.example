@@ -1,0 +1,44 @@
+# Nginx على المضيف — وكيل إلى حاويات Docker (منفذ محلي فقط).
+# بعد التثبيت:
+#   sudo cp deploy/nginx/tenegta.tech.conf.example /etc/nginx/sites-available/tenegta.tech
+#   sudo ln -sf /etc/nginx/sites-available/tenegta.tech /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#   sudo certbot --nginx -d tenegta.tech -d www.tenegta.tech
+
+upstream clinic_web {
+  server 127.0.0.1:3000;
+}
+
+upstream clinic_ops {
+  server 127.0.0.1:3001;
+}
+
+# الواجهة العامة (Next.js apps/web)
+server {
+  listen 80;
+  listen [::]:80;
+  server_name tenegta.tech www.tenegta.tech;
+
+  location / {
+    proxy_pass http://clinic_web;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+
+# اختياري: لوحة العمليات مباشرة على نطاق فرعي (إن أضفت سجل A لـ ops)
+# server {
+#   listen 80;
+#   server_name ops.tenegta.tech;
+#   location / {
+#     proxy_pass http://clinic_ops;
+#     proxy_http_version 1.1;
+#     proxy_set_header Host $host;
+#     proxy_set_header X-Real-IP $remote_addr;
+#     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#     proxy_set_header X-Forwarded-Proto $scheme;
+#   }
+# }
