@@ -83,8 +83,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clinicsaas}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       BRIDGE_INTERNAL_URL: ${BRIDGE_INTERNAL_URL:-http://host.docker.internal:3100}
-      # إن فشل الاتصال بـ host.docker.internal (fetch failed)، جرّب بوابة Docker للمضيف (غالبًا 172.17.0.1 — تحقق بـ docker network inspect bridge)
-      BRIDGE_INTERNAL_FALLBACK_URL: ${BRIDGE_INTERNAL_FALLBACK_URL:-http://172.17.0.1:3100}
+      # اختياري: ثاني URL للفحص (شبكة compose ليست docker0؛ لا تفترض 172.17.0.1). عيّن بوابة الشبكة الفعلية: docker network inspect <project>_default | grep Gateway
+      BRIDGE_INTERNAL_FALLBACK_URL: ${BRIDGE_INTERNAL_FALLBACK_URL:-}
       BRIDGE_SEND_TOKEN: ${BRIDGE_SEND_TOKEN:-}
       BRIDGE_HEALTH_TIMEOUT_MS: ${BRIDGE_HEALTH_TIMEOUT_MS:-12000}
       # يجب أن يطابق clinic-web ووظائف الـ cron — وإلا 401 Unauthorized على /api/internal/*

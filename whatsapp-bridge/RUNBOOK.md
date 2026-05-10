@@ -87,6 +87,8 @@ Important keys:
 |----------|---------|
 | `CLINIC_ID` | Default tenant id forwarded to n8n as `clinic_id` (per bridge instance). |
 | `N8N_WEBHOOK_URL` | Production webhook URL. |
+| `BRIDGE_PORT` | HTTP listen port (default `3100`). |
+| `BRIDGE_BIND_HOST` | Listen address. Use **`0.0.0.0`** on a VPS when **ops-dashboard runs in Docker** and probes `host.docker.internal` / deep health — **`127.0.0.1` alone causes connect timeouts** from containers. |
 | `N8N_WEBHOOK_HMAC_SECRET` | Shared secret; bridge sends `X-Bridge-Signature: sha256=<hex>` over raw JSON body. Set the same value in n8n env; workflow **Verify Webhook HMAC** enforces it when non-empty. |
 | `BRIDGE_SEND_API_TOKEN` | If set, `POST /send` requires `Authorization: Bearer <token>`. |
 | `MAX_REPLIES_PER_HOUR_PER_CHAT` | Rate limit per chat for `/send`. |

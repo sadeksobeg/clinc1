@@ -160,15 +160,17 @@ function createHttpServer(config, deps) {
     }
   });
 
-  server.listen(config.bridgePort, () => {
+  server.listen(config.bridgePort, config.bridgeBindHost, () => {
+    const host = config.bridgeBindHost;
     console.log(
-      `[bridge] outbound endpoint ready on http://localhost:${config.bridgePort}/send`,
+      `[bridge] outbound endpoint ready on http://${host}:${config.bridgePort}/send`,
     );
     console.log(
-      `[bridge] health http://localhost:${config.bridgePort}/health | ready http://localhost:${config.bridgePort}/ready | metrics http://localhost:${config.bridgePort}/metrics`,
+      `[bridge] health http://${host}:${config.bridgePort}/health | ready http://${host}:${config.bridgePort}/ready | metrics http://${host}:${config.bridgePort}/metrics`,
     );
     logEvent("bridge_started", {
       bridgePort: config.bridgePort,
+      bridgeBindHost: host,
       webhookUrl: config.webhookUrl,
       clinicId: config.clinicId,
       replyWindowHours: config.replyWindowHours,
