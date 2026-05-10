@@ -69,11 +69,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
     }
 
+    const forwardHeaders = new Headers({ "Content-Type": "application/json" });
+    for (const name of ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"] as const) {
+      const v = req.headers.get(name);
+      if (v?.trim()) forwardHeaders.set(name, v);
+    }
+
     let upstream: Response | null;
     try {
       upstream = await fetch(`${base}/api/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: forwardHeaders,
         body: JSON.stringify(parsed.data),
         cache: "no-store",
       });

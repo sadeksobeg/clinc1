@@ -23,13 +23,20 @@ function normalizeIp(raw: string): string {
 }
 
 export function requestIp(req: Request): string {
-  const forwarded = normalizeIp(req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "");
-  if (forwarded && forwarded !== "unknown") return forwarded;
-  // Local dev fallback: Next dev may not always set forwarded headers.
-  const host = String(req.headers.get("host") || "").toLowerCase();
+  const hostRaw = String(req.headers.get("host") || "").trim();
+  const host = hostRaw.toLowerCase();
+  // وصول مباشر إلى localhost: Host أوثق من X-Forwarded-For (قد يضيف بروكسي/دوكر عنوانًا داخليًا غير مدرج في القائمة).
   if (host.includes("localhost") || host.includes("127.0.0.1") || host.includes("[::1]")) {
     return host.includes("[::1]") ? "::1" : "127.0.0.1";
   }
+  // Host يحوي عنوان IPv4 علنيًا (مثلاً curl إلى http://SERVER_IP:3001)
+  const v4Host = /^(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?$/i.exec(hostRaw);
+  if (v4Host) return normalizeIp(v4Host[1]!);
+  const v6Host = /^\[([^\]]+)\](?::\d+)?$/i.exec(hostRaw);
+  if (v6Host) return normalizeIp(v6Host[1]!);
+
+  const forwarded = normalizeIp(req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "");
+  if (forwarded && forwarded !== "unknown") return forwarded;
   return forwarded || "unknown";
 }
 
