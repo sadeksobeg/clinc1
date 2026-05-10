@@ -24,8 +24,19 @@ function resolveTraceId(req: Request): string {
   return crypto.randomUUID().replaceAll("-", "");
 }
 
+/** Loopback origin inside Docker (see INTERNAL_WEB_ORIGIN in docker-compose) avoids hairpin self-fetch via public URL. */
+function originForInternalWebFetch(req: Request): string {
+  const internal = process.env.INTERNAL_WEB_ORIGIN?.replace(/\/$/, "").trim();
+  if (internal) return internal;
+  try {
+    return new URL(req.url).origin;
+  } catch {
+    return "http://127.0.0.1:3000";
+  }
+}
+
 export async function requireUserSession(req: Request): Promise<WebUserSession | NextResponse> {
-  const meUrl = new URL("/api/auth/me", req.url);
+  const meUrl = new URL("/api/auth/me", originForInternalWebFetch(req));
   const r = await fetch(meUrl, {
     method: "GET",
     headers: { cookie: req.headers.get("cookie") || "" },

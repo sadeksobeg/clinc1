@@ -80,7 +80,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       BRIDGE_INTERNAL_URL: ${BRIDGE_INTERNAL_URL:-http://host.docker.internal:3100}
       BRIDGE_SEND_TOKEN: ${BRIDGE_SEND_TOKEN:-}
-      SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:-}
+      # يجب أن يطابق clinic-web ووظائف الـ cron — وإلا 401 Unauthorized على /api/internal/*
+      SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:?set SCHEDULING_SERVICE_TOKEN}
       OLLAMA_URL: ${OLLAMA_URL:-}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
       NODE_ENV: production
@@ -116,7 +117,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       # استدعاء /api/auth/me من الـ middleware دون الخروج إلى Cloudflare (hairpin)
       INTERNAL_WEB_ORIGIN: ${CLINIC_WEB_INTERNAL_ORIGIN:-http://127.0.0.1:3000}
-      SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:-}
+      SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:?set SCHEDULING_SERVICE_TOKEN}
 
   event-consumer:
     build:
