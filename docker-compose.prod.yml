@@ -1,6 +1,8 @@
 # Production-oriented stack (WhatsApp bridge usually runs on the host for Chrome / QR).
 # Usage from repo root:
-#   set POSTGRES_PASSWORD, DATABASE_URL, JWT_SECRET in a .env file
+#   set POSTGRES_PASSWORD, JWT_SECRET in a .env file (e.g. .env.prod)
+#   DATABASE_URL in .env may point at 127.0.0.1 for host-side tools; ops-dashboard and
+#   event-consumer always use hostname `postgres` (Docker service name) — see environment below.
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 # TLS: terminate at a host nginx — see deploy/nginx/clinic.conf.example و deploy/nginx/tenegta.tech.conf.example
 # الواجهة العامة (apps/web): خدمة clinic-web على 127.0.0.1:3000
@@ -73,7 +75,8 @@ services:
     ports:
       - "127.0.0.1:${OPS_PUBLISH_PORT:-3001}:3001"
     environment:
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL for ops-dashboard}
+      # داخل Docker يجب host=postgres وليس 127.0.0.1 (اللوكال يشير لداخل الحاوية)
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clinicsaas}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       BRIDGE_INTERNAL_URL: ${BRIDGE_INTERNAL_URL:-http://host.docker.internal:3100}
       BRIDGE_SEND_TOKEN: ${BRIDGE_SEND_TOKEN:-}
@@ -121,7 +124,7 @@ services:
         condition: service_started
     environment:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL for event-consumer}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clinicsaas}
       REDIS_EVENTS_STREAM: ${REDIS_EVENTS_STREAM:-ops:events:inbound}
       REDIS_CONSUMER_GROUP: ${REDIS_CONSUMER_GROUP:-ops-core}
       EVENT_DLQ_AFTER_ATTEMPTS: ${EVENT_DLQ_AFTER_ATTEMPTS:-3}
