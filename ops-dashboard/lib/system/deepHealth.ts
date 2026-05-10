@@ -25,6 +25,26 @@ const GROUP = (process.env.REDIS_CONSUMER_GROUP || "ops-core").trim();
 
 const DEAD_LETTER_ALERT_THRESHOLD = Math.max(1, Number(process.env.DEAD_LETTER_ALERT_THRESHOLD || 5));
 
+function formatFetchError(e: unknown): string {
+  if (!(e instanceof Error)) return String(e);
+  const parts: string[] = [e.message];
+  let c: unknown = e.cause;
+  let depth = 0;
+  while (depth < 5) {
+    if (c instanceof Error) {
+      parts.push(c.message);
+      c = c.cause;
+      depth++;
+      continue;
+    }
+    if (c && typeof c === "object" && "code" in c) {
+      parts.push(`code=${String((c as { code?: unknown }).code)}`);
+    }
+    break;
+  }
+  return parts.filter(Boolean).join(" — ");
+}
+
 /** Exported for tests — Redis stream IDs are `<unix-ms>-<seq>`. */
 export function streamEntryLagMs(streamId: string | undefined, nowMs = Date.now()): number | null {
   if (!streamId) return null;
@@ -113,21 +133,43 @@ export async function runDeepHealth(pool: Pool): Promise<DeepHealthReport> {
   }
 
   const base = (process.env.BRIDGE_INTERNAL_URL || "http://127.0.0.1:3100").replace(/\/$/, "");
+  const fallbackRaw = (process.env.BRIDGE_INTERNAL_FALLBACK_URL || "").replace(/\/$/, "").trim();
+  /** Docker → host can be slow; optional second URL (e.g. http://172.17.0.1:3100) if host.docker.internal fails. */
+  const candidates = [...new Set([base, fallbackRaw].filter((x) => x.length > 0))];
   /** Docker → host (host.docker.internal) can exceed 2.5s on cold DNS/TCP; UI showed "This operation was aborted" at exactly 2500ms. */
   const bridgeProbeMs = Math.min(60_000, Math.max(3_000, Number(process.env.BRIDGE_HEALTH_TIMEOUT_MS || 12_000)));
-  const tB = Date.now();
-  try {
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), bridgeProbeMs);
-    const res = await fetch(`${base}/ready`, { method: "GET", signal: ac.signal });
-    clearTimeout(timer);
-    bridge.status = res.status;
-    bridge.ok = res.ok;
-    bridge.latency_ms = Date.now() - tB;
-    if (!res.ok) bridge.error = (await res.text()).slice(0, 500);
-  } catch (e) {
-    bridge.error = e instanceof Error ? e.message : String(e);
-    bridge.latency_ms = Date.now() - tB;
+
+  let reachedBridge = false;
+  for (const root of candidates) {
+    const tB = Date.now();
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), bridgeProbeMs);
+      const res = await fetch(`${root}/ready`, { method: "GET", signal: ac.signal });
+      clearTimeout(timer);
+      bridge.status = res.status;
+      bridge.ok = res.ok;
+      bridge.latency_ms = Date.now() - tB;
+      bridge.error = res.ok ? undefined : (await res.text()).slice(0, 500);
+      reachedBridge = true;
+      break;
+    } catch (e) {
+      bridge.latency_ms = Date.now() - tB;
+      const detail = formatFetchError(e);
+      const isLast = candidates.indexOf(root) === candidates.length - 1;
+      if (isLast) {
+        bridge.ok = false;
+        bridge.status = undefined;
+        bridge.error =
+          candidates.length > 1
+            ? `${detail} (tried: ${candidates.join(" | ")})`
+            : `${detail} — set BRIDGE_INTERNAL_URL to the Docker host gateway (often http://172.17.0.1:3100; run: docker network inspect bridge | grep Gateway) or add BRIDGE_INTERNAL_FALLBACK_URL`;
+      }
+    }
+  }
+  if (!reachedBridge && !bridge.error) {
+    bridge.ok = false;
+    bridge.error = "no_bridge_url_configured";
   }
 
   let status: DeepHealthStatus = "ok";
