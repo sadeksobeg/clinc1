@@ -93,6 +93,8 @@ services:
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-ops-dashboard}
       OTEL_DEPLOYMENT_ENV: ${OTEL_DEPLOYMENT_ENV:-production}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # مؤقت أثناء الإعداد فقط — لا تتركه مفعّلاً في الإنتاج
+      SUPERADMIN_IP_ALLOWLIST_DISABLED: ${SUPERADMIN_IP_ALLOWLIST_DISABLED:-}
 
   clinic-web:
     build:
