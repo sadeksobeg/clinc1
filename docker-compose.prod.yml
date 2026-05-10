@@ -1,9 +1,13 @@
 # Production-oriented stack (WhatsApp bridge usually runs on the host for Chrome / QR).
 # Usage from repo root:
-#   set POSTGRES_PASSWORD, JWT_SECRET in a .env file (e.g. .env.prod)
+#   Create .env.prod from .env.prod.example and set POSTGRES_PASSWORD, JWT_SECRET, SCHEDULING_SERVICE_TOKEN, …
+#   Compose only auto-loads ".env" — NOT ".env.prod". Always pass:
+#     --env-file .env.prod
+#   on every command (including a single service), or copy secrets into ".env".
 #   DATABASE_URL in .env may point at 127.0.0.1 for host-side tools; ops-dashboard and
 #   event-consumer always use hostname `postgres` (Docker service name) — see environment below.
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build ops-dashboard
 # TLS: terminate at a host nginx — see deploy/nginx/clinic.conf.example و deploy/nginx/tenegta.tech.conf.example
 # الواجهة العامة (apps/web): خدمة clinic-web على 127.0.0.1:3000
 
