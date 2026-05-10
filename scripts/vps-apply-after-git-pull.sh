@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # بعد: cd /opt/clinic-os && git pull
 # شغّل: sudo bash scripts/vps-apply-after-git-pull.sh
-# يحقن proxy_set_header CF-Connecting-IP في nginx إن كان مفقودًا، ينسخ الـ snippet، يعيد تحميل nginx، ثم يبني ويشغّل ops-dashboard و clinic-web.
+# ينسخ snippet nginx (عنوان زائر موثوق عبر CF-Connecting-IP / تجاهل سلسلة XFF المزيّفة)،
+# يحقن CF-Connecting-IP في الموقع إن كان مفقودًا، يعيد تحميل nginx، ثم يبني ويشغّل الحاويات.
 
 set -euo pipefail
 
