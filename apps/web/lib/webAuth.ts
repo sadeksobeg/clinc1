@@ -49,6 +49,10 @@ export function decodeJwtPayloadUnverified(token: string): (JWTPayload & Record<
   }
 }
 
+function coerceJwtScope(scope: unknown): "platform" | "clinic" {
+  return scope === "platform" || scope === "clinic" ? scope : "clinic";
+}
+
 /** Ops may issue clinic-scoped JWT for super_admin with clinic_id 0; treat as platform so middleware accepts the session. */
 function normalizeSuperAdminScope(
   role: string | undefined,
@@ -66,8 +70,7 @@ export async function parseSessionFromToken(token: string): Promise<WebUserSessi
   const key = secretKey();
   const payloadFromDecode = decodeJwtPayloadUnverified(token);
   if (!key && payloadFromDecode) {
-    const rawScope =
-      payloadFromDecode.scope === "platform" || payloadFromDecode.scope === "clinic" ? payloadFromDecode.scope : "clinic";
+    const rawScope = coerceJwtScope(payloadFromDecode.scope);
     const role = typeof payloadFromDecode.role === "string" ? payloadFromDecode.role : "";
     let clinicId = Number(payloadFromDecode.clinicId || 0);
     let scope = rawScope;
@@ -105,7 +108,7 @@ export async function parseSessionFromToken(token: string): Promise<WebUserSessi
       tokenVersion?: number;
     };
     const role = String(p.role || "");
-    const rawScope = p.scope === "platform" || p.scope === "clinic" ? p.scope : "clinic";
+    const rawScope = coerceJwtScope(p.scope);
     let clinicId = Number(p.clinicId || 0);
     let scope = rawScope;
     ({ scope, clinicId } = normalizeSuperAdminScope(role, scope, clinicId));
