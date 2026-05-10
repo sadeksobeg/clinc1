@@ -100,6 +100,8 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
     restart: unless-stopped
     depends_on:
       ops-dashboard:
@@ -112,6 +114,8 @@ services:
       OPS_DASHBOARD_URL: ${WEB_TO_OPS_URL:-http://ops-dashboard:3001}
       # يجب أن يطابق JWT_SECRET في ops-dashboard حتى تُفكّ جلسة ops_session في middleware و /api/auth/me
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      # استدعاء /api/auth/me من الـ middleware دون الخروج إلى Cloudflare (hairpin)
+      INTERNAL_WEB_ORIGIN: ${CLINIC_WEB_INTERNAL_ORIGIN:-http://127.0.0.1:3000}
       SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:-}
 
   event-consumer:

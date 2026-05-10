@@ -72,7 +72,9 @@ export async function middleware(req: NextRequest) {
     return r;
   }
 
-  const meUrl = new URL("/api/auth/me", req.url);
+  const internalOrigin = process.env.INTERNAL_WEB_ORIGIN?.replace(/\/$/, "").trim();
+  const meOrigin = internalOrigin || req.nextUrl.origin;
+  const meUrl = new URL("/api/auth/me", meOrigin);
   const meRes = await fetch(meUrl, {
     headers: {
       cookie: req.headers.get("cookie") || "",

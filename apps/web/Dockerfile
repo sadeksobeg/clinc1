@@ -12,6 +12,9 @@ RUN if [ "$SKIP_INSTALL" = "true" ]; then mkdir -p node_modules; else npm instal
 FROM node:20-alpine AS builder
 WORKDIR /app
 ARG SKIP_INSTALL=false
+# يُثبَّت في طبقة middleware عند `next build` — يجب أن يطابق قيمة التشغيل في compose و ops-dashboard
+ARG JWT_SECRET
+ENV JWT_SECRET=$JWT_SECRET
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1

@@ -36,6 +36,7 @@ jobs:
       - name: Build (next build)
         env:
           OPS_DASHBOARD_URL: "http://127.0.0.1:3001"
+          JWT_SECRET: "ci-placeholder-secret-at-least-32-chars-long"
         run: npm run build
 
   ops-dashboard:
