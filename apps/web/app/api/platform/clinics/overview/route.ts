@@ -6,6 +6,16 @@ function isPlatformSuperAdmin(role?: string, scope?: string): boolean {
   return String(role || "").toLowerCase() === "super_admin" && scope === "platform";
 }
 
+function internalOrigin(req: Request): string {
+  const internal = process.env.INTERNAL_WEB_ORIGIN?.replace(/\/$/, "").trim();
+  if (internal) return internal;
+  try {
+    return new URL(req.url).origin;
+  } catch {
+    return "http://127.0.0.1:3000";
+  }
+}
+
 export async function GET(req: Request) {
   const session = await requireUserSession(req);
   if (session instanceof NextResponse) return session;
@@ -13,20 +23,24 @@ export async function GET(req: Request) {
     return NextResponse.json(fail("forbidden", "Forbidden"), { status: 403 });
   }
 
+  const base = internalOrigin(req);
   const [clinicsRes, revenueRes, presenceRes] = await Promise.all([
-    fetch(new URL("/api/platform/clinics", req.url), {
+    fetch(new URL("/api/platform/clinics", base), {
       headers: { cookie: req.headers.get("cookie") || "" },
       cache: "no-store",
     }),
-    fetch(new URL("/api/ops/billing/admin/revenue", req.url), {
+    fetch(new URL("/api/ops/billing/admin/revenue", base), {
       headers: { cookie: req.headers.get("cookie") || "" },
       cache: "no-store",
     }),
-    fetch(new URL("/api/platform/clinics/presence?window_minutes=5", req.url), {
+    fetch(new URL("/api/platform/clinics/presence?window_minutes=5", base), {
       headers: { cookie: req.headers.get("cookie") || "" },
       cache: "no-store",
     }),
-  ]);
+  ]).catch(() => [null, null, null] as const);
+  if (!clinicsRes || !revenueRes || !presenceRes) {
+    return NextResponse.json(fail("internal_fetch_failed", "Failed to query platform aggregates"), { status: 502 });
+  }
   const clinicsJson = (await clinicsRes.json().catch(() => null)) as any;
   const revenueJson = (await revenueRes.json().catch(() => null)) as any;
   const presenceJson = (await presenceRes.json().catch(() => null)) as any;

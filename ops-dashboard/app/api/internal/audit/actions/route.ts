@@ -37,6 +37,7 @@ export async function GET(req: Request) {
        WHERE ($1::int = 0 OR clinic_id = $1)
          AND created_at >= NOW() - interval '24 hours'
          AND payload ? 'duration_ms'
+         AND (payload->>'duration_ms') ~ '^[0-9]+(\.[0-9]+)?$'
        GROUP BY action
        ORDER BY p95_ms DESC NULLS LAST, total DESC`,
       [clinicId],
