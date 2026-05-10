@@ -20,6 +20,34 @@ function opsBaseUrl(): string | null {
   return u || null;
 }
 
+/** قراءة ترويسة بلا حساسية لحالة الأحرف (Cloudflare قد يرسل CF-Connecting-IP). */
+function headerLine(req: Request, name: string): string | undefined {
+  const want = name.toLowerCase();
+  for (const [k, v] of req.headers.entries()) {
+    if (k.toLowerCase() === want) {
+      const s = v?.trim();
+      return s || undefined;
+    }
+  }
+  return undefined;
+}
+
+/** عنوان الزائر لقائمة IP في ops — يُمرَّر صراحةً إلى ops لأن بعض البروكسيات لا تصل بكل الترويسات. */
+function buildForwardHeadersToOps(req: Request): Headers {
+  const h = new Headers({ "Content-Type": "application/json" });
+  const cf = headerLine(req, "cf-connecting-ip");
+  const xffRaw = headerLine(req, "x-forwarded-for");
+  const xri = headerLine(req, "x-real-ip");
+  const firstXff = xffRaw?.split(",")[0]?.trim();
+  const client = cf || firstXff || xri;
+  if (client) {
+    h.set("cf-connecting-ip", client);
+  }
+  if (xffRaw) h.set("x-forwarded-for", xffRaw);
+  if (xri) h.set("x-real-ip", xri);
+  return h;
+}
+
 /** Undici may send multiple Set-Cookie; get("set-cookie") is unreliable — use getSetCookie when present. */
 function extractOpsSessionToken(upstream: Response): string | null {
   try {
@@ -69,11 +97,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
     }
 
-    const forwardHeaders = new Headers({ "Content-Type": "application/json" });
-    for (const name of ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"] as const) {
-      const v = req.headers.get(name);
-      if (v?.trim()) forwardHeaders.set(name, v);
-    }
+    const forwardHeaders = buildForwardHeadersToOps(req);
 
     let upstream: Response | null;
     try {

@@ -1,6 +1,17 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Pool } from "pg";
 
+function headerLine(req: Request, name: string): string | undefined {
+  const want = name.toLowerCase();
+  for (const [k, v] of req.headers.entries()) {
+    if (k.toLowerCase() === want) {
+      const s = v?.trim();
+      return s || undefined;
+    }
+  }
+  return undefined;
+}
+
 function normalizeIp(raw: string): string {
   if (!raw) return "unknown";
   const first = raw.includes(",") ? raw.split(",")[0]!.trim() : raw.trim();
@@ -36,13 +47,15 @@ export function requestIp(req: Request): string {
   if (v6Host) return normalizeIp(v6Host[1]!);
 
   // Cloudflare (و/clinic-web يمرّرها): عنوان الزائر الحقيقي قبل سلسلة X-Forwarded-For
-  const cfConnecting = req.headers.get("cf-connecting-ip")?.trim();
+  const cfConnecting = headerLine(req, "cf-connecting-ip");
   if (cfConnecting) {
     const n = normalizeIp(cfConnecting);
     if (n !== "unknown") return n;
   }
 
-  const forwarded = normalizeIp(req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "");
+  const xff = headerLine(req, "x-forwarded-for");
+  const xri = headerLine(req, "x-real-ip");
+  const forwarded = normalizeIp(xff || xri || "");
   if (forwarded && forwarded !== "unknown") return forwarded;
   return forwarded || "unknown";
 }
