@@ -113,10 +113,12 @@ export async function runDeepHealth(pool: Pool): Promise<DeepHealthReport> {
   }
 
   const base = (process.env.BRIDGE_INTERNAL_URL || "http://127.0.0.1:3100").replace(/\/$/, "");
+  /** Docker → host (host.docker.internal) can exceed 2.5s on cold DNS/TCP; UI showed "This operation was aborted" at exactly 2500ms. */
+  const bridgeProbeMs = Math.min(60_000, Math.max(3_000, Number(process.env.BRIDGE_HEALTH_TIMEOUT_MS || 12_000)));
   const tB = Date.now();
   try {
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 2500);
+    const timer = setTimeout(() => ac.abort(), bridgeProbeMs);
     const res = await fetch(`${base}/ready`, { method: "GET", signal: ac.signal });
     clearTimeout(timer);
     bridge.status = res.status;

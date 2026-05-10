@@ -80,6 +80,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       BRIDGE_INTERNAL_URL: ${BRIDGE_INTERNAL_URL:-http://host.docker.internal:3100}
       BRIDGE_SEND_TOKEN: ${BRIDGE_SEND_TOKEN:-}
+      BRIDGE_HEALTH_TIMEOUT_MS: ${BRIDGE_HEALTH_TIMEOUT_MS:-12000}
       # يجب أن يطابق clinic-web ووظائف الـ cron — وإلا 401 Unauthorized على /api/internal/*
       SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:?set SCHEDULING_SERVICE_TOKEN}
       OLLAMA_URL: ${OLLAMA_URL:-}
