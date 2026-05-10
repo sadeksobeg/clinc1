@@ -16,8 +16,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN if [ "$SKIP_INSTALL" = "true" ] && [ ! -f node_modules/.package-lock.json ] && [ ! -d node_modules/next ]; then echo "SKIP_INSTALL=true requires local node_modules in build context"; exit 1; fi
-# بعد البناء قد لا يبقى مجلد public فارغ — Docker COPY يفشل إن غاب المسار
-RUN npm run build; mkdir -p public
+# لا تستخدم `;` بين build و mkdir — إن فشل البناء كان mkdir ينجح وتُعتبر الطبقة ناجحة بلا .next/standalone
+RUN mkdir -p public
+RUN npm run build
+RUN test -d .next/standalone || (echo "next build did not emit .next/standalone — check build logs above" && ls -la .next && exit 1)
 
 FROM node:20-alpine AS runner
 WORKDIR /app
