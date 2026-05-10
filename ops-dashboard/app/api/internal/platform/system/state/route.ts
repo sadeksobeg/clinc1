@@ -35,72 +35,78 @@ export async function GET(req: Request) {
   const permDenied = await requirePerm(req, "system.read");
   if (permDenied) return permDenied;
 
-  const pool = getPool();
-  const url = new URL(req.url);
-  const refresh = String(url.searchParams.get("refresh") || "") === "1";
-  const ttlMs = clampInt(Number(url.searchParams.get("ttl_ms") || 20_000), 5_000, 300_000);
+  try {
+    const pool = getPool();
+    const url = new URL(req.url);
+    const refresh = String(url.searchParams.get("refresh") || "") === "1";
+    const ttlMs = clampInt(Number(url.searchParams.get("ttl_ms") || 20_000), 5_000, 300_000);
 
-  // Read cached singleton.
-  const current = await pool.query(
-    `SELECT id, global_status, severity, active_incidents_count, critical_incidents_count, affected_clinics_count,
+    // Read cached singleton.
+    const current = await pool.query(
+      `SELECT id, global_status, severity, active_incidents_count, critical_incidents_count, affected_clinics_count,
             components, signals, last_evaluated_at, updated_at
        FROM platform_system_state
       WHERE id = 1
       LIMIT 1`,
-  );
-  const row = current.rows[0] as any | undefined;
-  const ageMs = row?.last_evaluated_at ? Date.now() - new Date(row.last_evaluated_at).getTime() : Number.POSITIVE_INFINITY;
+    );
+    const row = current.rows[0] as any | undefined;
+    const ageMs = row?.last_evaluated_at ? Date.now() - new Date(row.last_evaluated_at).getTime() : Number.POSITIVE_INFINITY;
 
-  if (!refresh && row && ageMs <= ttlMs) {
-    return NextResponse.json({ ok: true, cached: true, age_ms: ageMs, state: row });
-  }
+    if (!refresh && row && ageMs <= ttlMs) {
+      return NextResponse.json({ ok: true, cached: true, age_ms: ageMs, state: row });
+    }
 
-  // Compute quick state from existing signals.
-  const [health, failures, incidentCounts] = await Promise.all([
-    fetch(new URL("/api/internal/system/health", req.url), { headers: req.headers, cache: "no-store" }).then((r) => r.json()).catch(() => null),
-    fetch(new URL("/api/internal/system/failures", req.url), { headers: req.headers, cache: "no-store" }).then((r) => r.json()).catch(() => null),
-    pool.query(
-      `SELECT
+    // Compute quick state from existing signals.
+    const [health, failures, incidentCounts] = await Promise.all([
+      fetch(new URL("/api/internal/system/health", req.url), { headers: req.headers, cache: "no-store" }).then((r) => r.json()).catch(() => null),
+      fetch(new URL("/api/internal/system/failures", req.url), { headers: req.headers, cache: "no-store" }).then((r) => r.json()).catch(() => null),
+      pool.query(
+        `SELECT
           COUNT(*) FILTER (WHERE status IN ('open','acknowledged','assigned'))::int AS active_count,
           COUNT(*) FILTER (WHERE status IN ('open','acknowledged','assigned') AND severity = 'critical')::int AS critical_active
        FROM platform_incidents`,
-    ),
-  ]);
+      ),
+    ]);
 
-  const h = (health && health.ok === true ? (health.health as any) : {}) as any;
-  const f = (failures && failures.ok === true ? (failures.failures as any) : {}) as any;
-  const activeInc = Number(incidentCounts.rows[0]?.active_count || 0);
-  const criticalInc = Number(incidentCounts.rows[0]?.critical_active || 0);
+    const h = (health && health.ok === true ? (health.health as any) : {}) as any;
+    const f = (failures && failures.ok === true ? (failures.failures as any) : {}) as any;
+    const activeInc = Number(incidentCounts.rows[0]?.active_count || 0);
+    const criticalInc = Number(incidentCounts.rows[0]?.critical_active || 0);
 
-  const dbOk = h?.db_ok !== false;
-  const dbLatency = Number(h?.db_latency_ms || 0);
-  const webhookFailures = Number(f?.webhook_failures_24h || 0);
-  const deadJobs = Number(f?.dead_jobs_24h || 0);
-  const waDisabled = Boolean(h?.whatsapp_send_runtime_disabled);
+    const dbOk = h?.db_ok !== false;
+    const dbLatency = Number(h?.db_latency_ms || 0);
+    const webhookFailures = Number(f?.webhook_failures_24h || 0);
+    const deadJobs = Number(f?.dead_jobs_24h || 0);
+    const waDisabled = Boolean(h?.whatsapp_send_runtime_disabled);
 
-  let severity = 0;
-  if (!dbOk) severity = Math.max(severity, 3);
-  if (criticalInc > 0) severity = Math.max(severity, 3);
-  if (waDisabled) severity = Math.max(severity, 2);
-  if (dbLatency > 800) severity = Math.max(severity, 2);
-  if (webhookFailures > 0 || deadJobs > 0 || activeInc > 0) severity = Math.max(severity, 1);
+    let severity = 0;
+    if (!dbOk) severity = Math.max(severity, 3);
+    if (criticalInc > 0) severity = Math.max(severity, 3);
+    if (waDisabled) severity = Math.max(severity, 2);
+    if (dbLatency > 800) severity = Math.max(severity, 2);
+    if (webhookFailures > 0 || deadJobs > 0 || activeInc > 0) severity = Math.max(severity, 1);
 
-  const globalStatus = severity >= 3 ? "incident" : severity >= 1 ? "degraded" : "healthy";
+    const globalStatus = severity >= 3 ? "incident" : severity >= 1 ? "degraded" : "healthy";
 
-  const components = {
-    db: !dbOk ? "down" : dbLatency > 800 ? "degraded" : "healthy",
-    whatsapp: waDisabled ? "degraded" : "healthy",
-    billing: webhookFailures > 0 ? "degraded" : "healthy",
-    jobs: deadJobs > 0 ? "degraded" : "healthy",
-  };
+    const components = {
+      db: !dbOk ? "down" : dbLatency > 800 ? "degraded" : "healthy",
+      whatsapp: waDisabled ? "degraded" : "healthy",
+      billing: webhookFailures > 0 ? "degraded" : "healthy",
+      jobs: deadJobs > 0 ? "degraded" : "healthy",
+    };
 
-  const signals = {
-    health: h,
-    failures: f,
-  };
+    const signals = {
+      health: h,
+      failures: f,
+    };
 
-  const updated = await pool.query(
-    `UPDATE platform_system_state
+    await pool.query(
+      `INSERT INTO platform_system_state (id) VALUES (1)
+       ON CONFLICT (id) DO NOTHING`,
+    );
+
+    const updated = await pool.query(
+      `UPDATE platform_system_state
         SET global_status = $1,
             severity = $2,
             active_incidents_count = $3,
@@ -113,9 +119,22 @@ export async function GET(req: Request) {
       WHERE id = 1
       RETURNING id, global_status, severity, active_incidents_count, critical_incidents_count, affected_clinics_count,
                 components, signals, last_evaluated_at, updated_at`,
-    [globalStatus, severity, activeInc, criticalInc, 0, JSON.stringify(components), JSON.stringify(signals)],
-  );
+      [globalStatus, severity, activeInc, criticalInc, 0, JSON.stringify(components), JSON.stringify(signals)],
+    );
 
-  return NextResponse.json({ ok: true, cached: false, state: updated.rows[0] });
+    return NextResponse.json({ ok: true, cached: false, state: updated.rows[0] });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/internal/platform/system/state]", e);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "system_state_failed",
+        detail: msg,
+        hint: "Apply DB migrations through 038+ (platform_system_state, platform_incidents). See ops-dashboard/scripts/apply-scheduling-sql.cjs",
+      },
+      { status: 500 },
+    );
+  }
 }
 
