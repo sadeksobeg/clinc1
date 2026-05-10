@@ -22,6 +22,27 @@
 2. Auth (shared cookie or OIDC) + role-based navigation mirroring `roleGuard`.
 3. Platform admin screens (lowest priority unless you sell multi-tenant self-serve).
 
+## P1 launch-scope trim (5 routes only)
+
+To avoid blocking launch on full Angular parity, this is the approved first-clinic scope:
+
+| Route | Launch priority | Target state before go-live |
+|-------|------------------|-----------------------------|
+| `/login` | P1-CORE | Fully functional auth flow (not shell/TBD) |
+| `/dashboard` | P1-CORE | Stable post-login home with role-aware navigation |
+| `/clinic/reception` | P1-CORE | Reception workflow fully on `apps/web` |
+| `/clinic/doctor` | P1-CORE | Doctor queue/actions usable for first clinic |
+| `/clinic/doctor/billing` | P1-CORE | Doctor billing essentials available |
+
+Everything outside the 5 routes above moves to post-launch backlog unless marked business-critical by release owner.
+
+## Post-launch backlog bucket
+
+- `/clinic/communications/*`
+- `/clinic/analytics`
+- `/platform/*` administrative suite
+- public marketing parity routes beyond existing landing needs
+
 ## Decommission criteria for Angular
 
 - [ ] Receptionist daily workflow on `apps/web` only.

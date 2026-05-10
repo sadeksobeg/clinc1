@@ -1,13 +1,16 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
+ARG SKIP_INSTALL=false
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN if [ "$SKIP_INSTALL" = "true" ]; then mkdir -p node_modules; else npm install --prefer-offline --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 --no-audit --no-fund; fi
 
 FROM node:20-alpine AS builder
 WORKDIR /app
+ARG SKIP_INSTALL=false
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+RUN if [ "$SKIP_INSTALL" = "true" ] && [ ! -f node_modules/.package-lock.json ] && [ ! -d node_modules/next ]; then echo "SKIP_INSTALL=true requires local node_modules in build context"; exit 1; fi
 RUN npm run build
 
 FROM node:20-alpine AS runner

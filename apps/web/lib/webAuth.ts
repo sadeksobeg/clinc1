@@ -35,7 +35,8 @@ export function readOpsSessionTokenFromHeaders(headers: Headers): string | null 
   return cookieValue(headers.get("cookie") || "", "ops_session");
 }
 
-function decodePayloadNoVerify(token: string): (JWTPayload & Record<string, unknown>) | null {
+/** Decode JWT payload without verification (for Edge middleware / fallback when ops already verified upstream). */
+export function decodeJwtPayloadUnverified(token: string): (JWTPayload & Record<string, unknown>) | null {
   try {
     const parts = token.split(".");
     if (parts.length < 2) return null;
@@ -50,7 +51,7 @@ function decodePayloadNoVerify(token: string): (JWTPayload & Record<string, unkn
 
 export async function parseSessionFromToken(token: string): Promise<WebUserSession | null> {
   const key = secretKey();
-  const payloadFromDecode = decodePayloadNoVerify(token);
+  const payloadFromDecode = decodeJwtPayloadUnverified(token);
   if (!key && payloadFromDecode) {
     const clinicId = Number(payloadFromDecode.clinicId || 0);
     const role = typeof payloadFromDecode.role === "string" ? payloadFromDecode.role : "";

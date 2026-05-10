@@ -150,12 +150,16 @@ async function run() {
   result.created_request_id = Number(req.request?.id || 0) || null;
 
   const pendingId = await latestPendingRequestId();
+  const reviewIdempotency = `billing-smoke-approve-${Date.now()}-${pendingId}`;
   await api(`/api/internal/billing/admin/requests/${pendingId}/review`, {
     method: "POST",
     body: JSON.stringify({
       decision: "approve",
       reviewer: "smoke_test_runner",
       review_note: "Approved by automated smoke test",
+      idempotency_key: reviewIdempotency,
+      billing_confirm: true,
+      billing_confirm_phrase: "CONFIRM_APPROVE_PAYMENT",
     }),
   });
   result.approved_request_id = pendingId;

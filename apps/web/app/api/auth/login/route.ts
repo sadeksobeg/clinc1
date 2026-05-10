@@ -4,62 +4,137 @@ import { z } from "zod";
 const bodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1).max(200),
-  otp_code: z.string().trim().length(6).optional(),
+  /** Allow missing, undefined, or "" on first step; only 6-digit strings count as OTP. */
+  otp_code: z.preprocess(
+    (v) => {
+      if (v === undefined || v === null || v === "") return undefined;
+      const s = String(v).trim();
+      return s.length ? s : undefined;
+    },
+    z.string().length(6).optional(),
+  ),
 });
 
-function opsBaseUrl(): string {
-  const u = process.env.OPS_DASHBOARD_URL?.replace(/\/$/, "");
-  if (!u) throw new Error("OPS_DASHBOARD_URL is not set");
-  return u;
+function opsBaseUrl(): string | null {
+  const u = process.env.OPS_DASHBOARD_URL?.replace(/\/$/, "") || "";
+  return u || null;
+}
+
+/** Undici may send multiple Set-Cookie; get("set-cookie") is unreliable — use getSetCookie when present. */
+function extractOpsSessionToken(upstream: Response): string | null {
+  try {
+    const headers = upstream.headers;
+    const lines: string[] =
+      typeof (headers as unknown as { getSetCookie?: () => string[] }).getSetCookie === "function"
+        ? (headers as unknown as { getSetCookie: () => string[] }).getSetCookie()
+        : (() => {
+            const single = headers.get("set-cookie");
+            return single ? [single] : [];
+          })();
+    for (const line of lines) {
+      const m = /ops_session=([^;]+)/.exec(line);
+      if (m?.[1]) {
+        const raw = m[1].trim();
+        try {
+          return decodeURIComponent(raw);
+        } catch {
+          return raw;
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 export async function POST(req: Request) {
-  let json: unknown;
   try {
-    json = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
-  }
-  const parsed = bodySchema.safeParse(json);
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
-  }
+    const base = opsBaseUrl();
+    if (!base) {
+      return NextResponse.json(
+        { ok: false, error: "auth_misconfigured", detail: "OPS_DASHBOARD_URL is not set on clinic-web" },
+        { status: 503 },
+      );
+    }
 
-  const upstream = await fetch(`${opsBaseUrl()}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(parsed.data),
-    cache: "no-store",
-  }).catch(() => null);
-  if (!upstream) {
-    return NextResponse.json({ ok: false, error: "auth_unavailable" }, { status: 502 });
-  }
-  const data = (await upstream.json().catch(() => ({}))) as {
-    ok?: boolean;
-    error?: string;
-    otp_required?: boolean;
-  };
-  if (data.otp_required) {
-    return NextResponse.json({ ok: true, otp_required: true });
-  }
-  if (!upstream.ok || !data.ok) {
-    return NextResponse.json({ ok: false, error: data.error || "invalid_credentials" }, { status: upstream.status || 401 });
-  }
+    let json: unknown;
+    try {
+      json = await req.json();
+    } catch {
+      return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
+    }
+    const parsed = bodySchema.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
+    }
 
-  const setCookie = upstream.headers.get("set-cookie") || "";
-  const m = /ops_session=([^;]+)/.exec(setCookie);
-  if (!m?.[1]) {
-    return NextResponse.json({ ok: false, error: "missing_session_cookie" }, { status: 502 });
-  }
-  const token = m[1];
+    let upstream: Response | null;
+    try {
+      upstream = await fetch(`${base}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed.data),
+        cache: "no-store",
+      });
+    } catch {
+      upstream = null;
+    }
+    if (!upstream) {
+      return NextResponse.json({ ok: false, error: "auth_unavailable" }, { status: 502 });
+    }
 
-  const res = NextResponse.json({ ok: true });
-  res.cookies.set("ops_session", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 8,
-  });
-  return res;
+    const upstreamStatus = upstream.status;
+    const data = (await upstream.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      detail?: string;
+      otp_required?: boolean;
+    };
+
+    if (data.otp_required) {
+      return NextResponse.json({ ok: true, otp_required: true });
+    }
+    if (!upstream.ok || !data.ok) {
+      const status = upstreamStatus || 401;
+      const fallback = status >= 500 ? "auth_upstream_error" : "invalid_credentials";
+      const errMsg = typeof data.error === "string" && data.error.trim() ? data.error.trim() : fallback;
+      const payload: Record<string, unknown> = {
+        ok: false,
+        error: errMsg,
+        upstream_http_status: upstreamStatus,
+      };
+      if (typeof data.detail === "string" && data.detail.trim()) {
+        payload.detail = data.detail.trim();
+      }
+      return NextResponse.json(payload, { status });
+    }
+
+    const token = extractOpsSessionToken(upstream);
+    if (!token) {
+      return NextResponse.json(
+        { ok: false, error: "missing_session_cookie", upstream_http_status: upstreamStatus },
+        { status: 502 },
+      );
+    }
+
+    try {
+      const res = NextResponse.json({ ok: true });
+      res.cookies.set("ops_session", token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 8,
+      });
+      return res;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "cookie_error";
+      return NextResponse.json({ ok: false, error: "session_cookie_failed", detail: msg }, { status: 500 });
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/auth/login]", msg);
+    return NextResponse.json({ ok: false, error: "internal_error", detail: msg }, { status: 500 });
+  }
 }

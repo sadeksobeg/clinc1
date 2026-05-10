@@ -1,6 +1,23 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
 const baseWeb = process.env.P5_BASE_WEB || "http://127.0.0.1:3000";
 const baseOps = process.env.P5_BASE_OPS || "http://127.0.0.1:3001";
 const schedulingServiceToken = process.env.SCHEDULING_SERVICE_TOKEN || "mid-auto-local-dev-token-32chars-minimum!!";
+const databaseUrl = (process.env.DATABASE_URL || "").trim();
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const requireFromOps = createRequire(path.join(repoRoot, "ops-dashboard", "package.json"));
+
+function envFlag(name) {
+  return ["1", "true", "yes"].includes(String(process.env[name] || "").trim().toLowerCase());
+}
+
+/** When true, skip Loki/Tempo HTTP checks (no docker-compose.observability on host, or 3100 is WhatsApp bridge). */
+const p5SkipLokiTempo = envFlag("P5_SKIP_LOKI_TEMPO");
+const p5LokiBase = (process.env.P5_LOKI_BASE_URL || "http://127.0.0.1:3100").replace(/\/$/, "");
+const p5TempoOtlp = (process.env.P5_TEMPO_OTLP_URL || "http://127.0.0.1:4318/v1/traces").trim();
+const p5TempoQueryBase = (process.env.P5_TEMPO_QUERY_BASE || "http://127.0.0.1:3200").replace(/\/$/, "");
 
 const results = [];
 const nowTag = Date.now();
@@ -24,28 +41,33 @@ async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchTempoTraceWithRetry(traceId, attempts = 6, delayMs = 1200) {
+async function fetchTempoTraceWithRetry(traceId, tempoQueryBase, maxAttempts = 6, delayMs = 1200) {
   let lastStatus = 0;
   let lastJson = {};
-  for (let i = 0; i < attempts; i += 1) {
-    const r = await request(`http://127.0.0.1:3200/api/traces/${traceId}`);
+  const base = tempoQueryBase.replace(/\/$/, "");
+  for (let i = 0; i < maxAttempts; i += 1) {
+    const r = await request(`${base}/api/traces/${traceId}`);
     lastStatus = r.status;
     lastJson = await r.json().catch(() => ({}));
     if (r.ok && Array.isArray(lastJson?.batches) && lastJson.batches.length > 0) {
       return { ok: true, status: r.status, attempts: i + 1 };
     }
-    if (i < attempts - 1) {
+    if (i < maxAttempts - 1) {
       await sleep(delayMs);
     }
   }
-  return { ok: false, status: lastStatus, attempts, lastJson };
+  return { ok: false, status: lastStatus, attempts: maxAttempts, lastJson };
 }
 
 async function login() {
-  const creds = [
+  const envEmail = (process.env.P5_LOGIN_EMAIL || "").trim();
+  const envPassword = (process.env.P5_LOGIN_PASSWORD || "").trim();
+  const creds = [];
+  if (envEmail && envPassword) creds.push({ email: envEmail, password: envPassword });
+  creds.push(
     { email: "ops@local.test", password: "Admin12345!" },
     { email: "admin@example.com", password: "Admin12345!" },
-  ];
+  );
   for (const c of creds) {
     const r = await request(`${baseWeb}/api/auth/login`, {
       method: "POST",
@@ -59,8 +81,36 @@ async function login() {
   return "";
 }
 
+async function ensureSmokeLoginUser() {
+  if (!databaseUrl) return;
+  const pg = requireFromOps("pg");
+  const bcrypt = requireFromOps("bcryptjs");
+  const client = new pg.Client({ connectionString: databaseUrl, connectionTimeoutMillis: 15_000 });
+  await client.connect();
+  try {
+    const passwordHash = bcrypt.hashSync("Admin12345!", 10);
+    await client.query(
+      `INSERT INTO staff_users (clinic_id, email, display_name, role, password_hash, is_active, deleted_at)
+       VALUES (1, 'ops@local.test', 'Ops Smoke Admin', 'admin', $1, TRUE, NULL)
+       ON CONFLICT (clinic_id, email) DO UPDATE
+       SET password_hash = EXCLUDED.password_hash,
+           role = 'admin',
+           is_active = TRUE,
+           deleted_at = NULL,
+           updated_at = NOW()`,
+      [passwordHash],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 async function main() {
-  const cookie = await login();
+  let cookie = await login();
+  if (!cookie) {
+    await ensureSmokeLoginUser();
+    cookie = await login();
+  }
   if (!cookie) {
     push("Login", false, "could_not_login_with_known_credentials");
     console.log("\nSummary:\n" + JSON.stringify(results, null, 2));
@@ -229,68 +279,85 @@ async function main() {
   const timelineFound = Array.isArray(timelineJson.timeline)
     ? timelineJson.timeline.some((e) => e?.event_name === "p5.smoke.trace_log_flow")
     : false;
-  const lokiJob = `p5-smoke-${nowTag}`;
-  const lokiPush = await request("http://127.0.0.1:3100/loki/api/v1/push", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      streams: [
-        {
-          stream: { job: lokiJob, service_name: "p5-smoke" },
-          values: [[`${BigInt(Date.now()) * 1000000n}`, "p5 observability smoke log"]],
-        },
-      ],
-    }),
-  });
-  await sleep(800);
-  const lokiQuery = await request(`http://127.0.0.1:3100/loki/api/v1/query?query=${encodeURIComponent(`{job="${lokiJob}"}`)}`);
-  const lokiQueryJson = await lokiQuery.json().catch(() => ({}));
-  const lokiFound = Array.isArray(lokiQueryJson?.data?.result) && lokiQueryJson.data.result.length > 0;
-  const tempoTraceId = crypto.randomUUID().replaceAll("-", "");
-  const startNs = BigInt(Date.now()) * 1000000n;
-  const tempoIngest = await request("http://127.0.0.1:4318/v1/traces", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      resourceSpans: [
-        {
-          resource: {
-            attributes: [{ key: "service.name", value: { stringValue: "p5-smoke" } }],
-          },
-          scopeSpans: [
+  push(
+    "Observability trace API + timeline",
+    obsStart.ok && obsLog.ok && obsFinish.ok && timeline.ok && timelineFound,
+    `trace_api=${obsStart.status}/${obsLog.status}/${obsFinish.status} timeline=${timeline.status}:${timelineFound}`,
+  );
+
+  let lokiPush = { ok: false, status: 0 };
+  let lokiQuery = { ok: false, status: 0 };
+  let lokiFound = false;
+  let tempoIngest = { ok: false, status: 0 };
+  let tempoQuery = { ok: false, status: 0, attempts: 0 };
+  let backendsDetail = "";
+
+  if (p5SkipLokiTempo) {
+    backendsDetail = "skipped P5_SKIP_LOKI_TEMPO=1 (Loki/Tempo not required on this host)";
+    push("Observability backends (Loki + Tempo)", true, backendsDetail);
+  } else {
+    try {
+      const lokiJob = `p5-smoke-${nowTag}`;
+      lokiPush = await request(`${p5LokiBase}/loki/api/v1/push`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          streams: [
             {
-              scope: { name: "p5.scope" },
-              spans: [
+              stream: { job: lokiJob, service_name: "p5-smoke" },
+              values: [[`${BigInt(Date.now()) * 1000000n}`, "p5 observability smoke log"]],
+            },
+          ],
+        }),
+      });
+      await sleep(800);
+      lokiQuery = await request(
+        `${p5LokiBase}/loki/api/v1/query?query=${encodeURIComponent(`{job="${lokiJob}"}`)}`,
+      );
+      const lokiQueryJson = await lokiQuery.json().catch(() => ({}));
+      lokiFound = Array.isArray(lokiQueryJson?.data?.result) && lokiQueryJson.data.result.length > 0;
+      const tempoTraceId = crypto.randomUUID().replaceAll("-", "");
+      const startNs = BigInt(Date.now()) * 1000000n;
+      tempoIngest = await request(p5TempoOtlp, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resourceSpans: [
+            {
+              resource: {
+                attributes: [{ key: "service.name", value: { stringValue: "p5-smoke" } }],
+              },
+              scopeSpans: [
                 {
-                  traceId: tempoTraceId,
-                  spanId: "1a2b3c4d5e6f7a8b",
-                  name: "p5-smoke-span",
-                  kind: "SPAN_KIND_INTERNAL",
-                  startTimeUnixNano: `${startNs}`,
-                  endTimeUnixNano: `${startNs + 5_000_000n}`,
+                  scope: { name: "p5.scope" },
+                  spans: [
+                    {
+                      traceId: tempoTraceId,
+                      spanId: "1a2b3c4d5e6f7a8b",
+                      name: "p5-smoke-span",
+                      kind: "SPAN_KIND_INTERNAL",
+                      startTimeUnixNano: `${startNs}`,
+                      endTimeUnixNano: `${startNs + 5_000_000n}`,
+                    },
+                  ],
                 },
               ],
             },
           ],
-        },
-      ],
-    }),
-  });
-  const tempoQuery = await fetchTempoTraceWithRetry(tempoTraceId, 6, 1200);
-  push(
-    "Observability flow (trace/timeline/loki/tempo)",
-    obsStart.ok &&
-      obsLog.ok &&
-      obsFinish.ok &&
-      timeline.ok &&
-      timelineFound &&
-      lokiPush.ok &&
-      lokiQuery.ok &&
-      lokiFound &&
-      tempoIngest.ok &&
-      tempoQuery.ok,
-    `trace_api=${obsStart.status}/${obsLog.status}/${obsFinish.status} timeline=${timeline.status}:${timelineFound} loki=${lokiPush.status}/${lokiQuery.status}:${lokiFound} tempo=${tempoIngest.status}/${tempoQuery.status}:${tempoQuery.attempts}`,
-  );
+        }),
+      });
+      tempoQuery = await fetchTempoTraceWithRetry(tempoTraceId, p5TempoQueryBase, 6, 1200);
+      backendsDetail = `loki=${lokiPush.status}/${lokiQuery.status}:${lokiFound} tempo=${tempoIngest.status}/${tempoQuery.status}:${tempoQuery.attempts}`;
+      push(
+        "Observability backends (Loki + Tempo)",
+        lokiPush.ok && lokiQuery.ok && lokiFound && tempoIngest.ok && tempoQuery.ok,
+        backendsDetail,
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      push("Observability backends (Loki + Tempo)", false, `error=${msg} (set P5_SKIP_LOKI_TEMPO=1 if stack not on host)`);
+    }
+  }
 
   const emergencyStatusBefore = await request(`${baseWeb}/api/ops/system/emergency/status`, { headers: { cookie } });
   const emergencyToggleOn = await request(`${baseWeb}/api/ops/system/emergency/toggle`, {

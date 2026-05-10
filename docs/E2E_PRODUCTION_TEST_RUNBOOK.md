@@ -2,6 +2,13 @@
 
 Use this checklist after deploy or before a major release. Automated coverage lives in `ops-dashboard` Vitest (`npm test`) and the scripts below; many scenarios still need a human on WhatsApp / bridge / Postgres.
 
+## Launch lock prerequisites (must be explicit)
+
+- Migration authority for launch/staging is SQL path only (`whatsapp-bridge/sql/migrations` via ops scripts), per `docs/ADR-001-single-source-of-truth-data-model.md`.
+- Record event-consumer stance before executing go-live checks:
+  - `required`: consumer must be up and healthy.
+  - `optional`: consumer may be down; sync booking path remains launch-critical path.
+
 For field pilot operations, also use:
 
 - `docs/PILOT_LAUNCH_PLAYBOOK.md`
@@ -36,6 +43,12 @@ npm run db:replay-events -- --conversation=<id>
 ### B) Stack up + deep health
 
 Bring up: Postgres, Redis, `ops-dashboard`, `event-consumer` (if using streams), `whatsapp-bridge`, n8n as needed.
+
+Capture evidence at this step:
+
+- `docker compose ... ps` output for full stack status
+- health/deep JSON snapshot
+- decision note whether event-consumer is `required` or `optional`
 
 Automated strict check (requires live `ops-dashboard` + token):
 
@@ -226,3 +239,10 @@ curl -sS -H "Authorization: Bearer $SCHEDULING_SERVICE_TOKEN" \
 18. **Booking + display name:** new patient without `display_name` receives name prompt; after name, doctor list or slots continues. With `OLLAMA_URL` set, doctor hint in free text can skip the doctor list when uniquely matched.
 
 Record pass/fail and timestamps in your change ticket.
+
+## Mandatory artifacts to attach
+
+- `p7-go-live-report.json`
+- `e2e-go-live-report.json`
+- latest release-gates workflow run link / logs
+- stack status snapshot (`docker compose ... ps`)

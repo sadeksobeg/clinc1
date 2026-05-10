@@ -1,13 +1,24 @@
 import { NextResponse } from "next/server";
-import { getUserSessionFromHeaders, readOpsSessionTokenFromHeaders } from "@/lib/webAuth";
+import {
+  decodeJwtPayloadUnverified,
+  getUserSessionFromHeaders,
+  readOpsSessionTokenFromHeaders,
+} from "@/lib/webAuth";
 
-function opsBaseUrl(): string {
-  const u = process.env.OPS_DASHBOARD_URL?.replace(/\/$/, "");
-  if (!u) throw new Error("OPS_DASHBOARD_URL is not set");
-  return u;
+function opsBaseUrl(): string | null {
+  const u = process.env.OPS_DASHBOARD_URL?.replace(/\/$/, "") || "";
+  return u || null;
 }
 
 export async function GET(req: Request) {
+  const base = opsBaseUrl();
+  if (!base) {
+    return NextResponse.json(
+      { ok: false, error: "auth_misconfigured", detail: "OPS_DASHBOARD_URL is not set on clinic-web" },
+      { status: 503 },
+    );
+  }
+
   const token = readOpsSessionTokenFromHeaders(req.headers);
   if (!token) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -35,7 +46,7 @@ export async function GET(req: Request) {
   let billing_locked = sessionBillingLocked;
   let billing_status = sessionBillingStatus;
   try {
-    const lockRes = await fetch(`${opsBaseUrl()}/api/auth/billing-lock`, {
+    const lockRes = await fetch(`${base}/api/auth/billing-lock`, {
       headers: {
         cookie: req.headers.get("cookie") || "",
       },
@@ -45,11 +56,27 @@ export async function GET(req: Request) {
       const lockJson = (await lockRes.json().catch(() => ({}))) as {
         billing_locked?: boolean;
         billing_status?: string;
-        clinic_id?: number;
+        clinic_id?: number | null;
+        scope?: string;
       };
       if (typeof lockJson.billing_locked === "boolean") billing_locked = lockJson.billing_locked;
       if (typeof lockJson.billing_status === "string") billing_status = lockJson.billing_status;
-      const clinicId = Number(lockJson.clinic_id || session?.clinic_id || 0);
+      // ops-dashboard billing-lock returns clinic_id: null for platform super_admin — do not treat as unauthorized
+      if (lockJson.scope === "platform") {
+        const claims = decodeJwtPayloadUnverified(token);
+        const uid = sessionUserId || (claims?.sub ? String(claims.sub) : "");
+        const role = sessionRole || (typeof claims?.role === "string" ? claims.role : "super_admin");
+        return NextResponse.json({
+          ok: true,
+          user_id: uid,
+          clinic_id: 0,
+          role,
+          scope: "platform",
+          billing_status: "active",
+          billing_locked: false,
+        });
+      }
+      const clinicId = Number(lockJson.clinic_id ?? session?.clinic_id ?? 0);
       if (!clinicId) {
         return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
       }

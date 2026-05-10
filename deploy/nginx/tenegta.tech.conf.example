@@ -4,6 +4,11 @@
 #   sudo ln -sf /etc/nginx/sites-available/tenegta.tech /etc/nginx/sites-enabled/
 #   sudo nginx -t && sudo systemctl reload nginx
 #   sudo certbot --nginx -d tenegta.tech -d www.tenegta.tech
+# DNS: سجل A للاسم ops → نفس IP السيرفر، ثم:
+#   sudo certbot --nginx -d ops.tenegta.tech
+#
+# إذا كان الملف على السيرفر معدّلاً مسبقاً بـ Certbot، انسخ كتلة server الخاصة بـ ops فقط
+# أو دمج يدوي بدل استبدال الملف بالكامل.
 
 upstream clinic_web {
   server 127.0.0.1:3000;
@@ -29,16 +34,18 @@ server {
   }
 }
 
-# اختياري: لوحة العمليات مباشرة على نطاق فرعي (إن أضفت سجل A لـ ops)
-# server {
-#   listen 80;
-#   server_name ops.tenegta.tech;
-#   location / {
-#     proxy_pass http://clinic_ops;
-#     proxy_http_version 1.1;
-#     proxy_set_header Host $host;
-#     proxy_set_header X-Real-IP $remote_addr;
-#     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-#     proxy_set_header X-Forwarded-Proto $scheme;
-#   }
-# }
+# لوحة العمليات (ops-dashboard على 3001) — سجل A: ops → IP السيرفر
+server {
+  listen 80;
+  listen [::]:80;
+  server_name ops.tenegta.tech;
+
+  location / {
+    proxy_pass http://clinic_ops;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}

@@ -15,6 +15,7 @@ const { spawnSync } = require("child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const opsDir = path.join(repoRoot, "ops-dashboard");
+const reportPath = path.join(repoRoot, "e2e-go-live-report.json");
 
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -237,6 +238,8 @@ async function main() {
   };
 
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  process.stdout.write(`\nReport written: ${reportPath}\n`);
   process.exit(report.overall_pass ? 0 : 1);
 }
 
@@ -248,5 +251,7 @@ main().catch((e) => {
     finished_at: new Date().toISOString(),
   };
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  process.stdout.write(`\nReport written: ${reportPath}\n`);
   process.exit(1);
 });

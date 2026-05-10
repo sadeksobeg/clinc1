@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "report_version": 1,
+  "started_at": "2026-05-09T09:27:38.795Z",
+  "finished_at": "2026-05-09T09:27:42.063Z",
+  "duration_ms": 3268,
+  "server": {
+    "base_url": "http://127.0.0.1:3001",
+    "login_http": 200,
+    "login_ok": true,
+    "metrics_http": 200,
+    "metrics_ok": true,
+    "error": null
+  },
+  "migrations": {
+    "ok": true,
+    "missing_tables": [],
+    "found_tables": [
+      "billing_notification_log",
+      "clinic_local_subscriptions",
+      "clinic_payment_requests"
+    ]
+  },
+  "billing_smoke": {
+    "ok": true,
+    "result": {
+      "ok": true,
+      "clinic_id": 1,
+      "trial_status": "trial_expiring",
+      "created_request_id": 2,
+      "approved_request_id": 2,
+      "active_status": "active",
+      "reminder_run": {
+        "sent": 0,
+        "failed": 1,
+        "skipped": 0
+      },
+      "last_reminder_kind": {
+        "kind": "renewal_due_3d",
+        "send_ok": false,
+        "created_at": "2026-05-09T09:27:41.938Z"
+      },
+      "suspend_run": {
+        "sent": 0,
+        "failed": 1,
+        "skipped": 0
+      },
+      "suspended_status": "grace"
+    },
+    "exit_code": 0
+  },
+  "overall_pass": true,
+  "notes": [
+    "Server: login page must respond; metrics route validates SCHEDULING_SERVICE_TOKEN.",
+    "Migrations: expects manual billing tables from 013_manual_billing_local.sql.",
+    "Billing smoke: mutates clinic_id=1 subscription state for demo — use disposable DB for CI."
+  ],
+  "failures": [],
+  "env_hint": {
+    "ops_base_url": "http://127.0.0.1:3001",
+    "database_url": "postgresql://postgres:****@127.0.0.1:5436/clinicsaas",
+    "scheduling_token_set": true
+  }
+}

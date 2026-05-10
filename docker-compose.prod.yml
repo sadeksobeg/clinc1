@@ -68,6 +68,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${OPS_PUBLISH_PORT:-3001}:3001"
     environment:
@@ -103,6 +105,8 @@ services:
       NODE_ENV: production
       # داخل الشبكة Docker — يجب أن يطابق اسم خدمة ops-dashboard
       OPS_DASHBOARD_URL: ${WEB_TO_OPS_URL:-http://ops-dashboard:3001}
+      # يجب أن يطابق JWT_SECRET في ops-dashboard حتى تُفكّ جلسة ops_session في middleware و /api/auth/me
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:-}
 
   event-consumer:

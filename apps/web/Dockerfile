@@ -4,18 +4,20 @@
 
 FROM node:20-alpine AS deps
 WORKDIR /app
+ARG SKIP_INSTALL=false
 COPY package.json package-lock.json* ./
 # package-lock غالبًا غير متزامن مع pnpm محليًا — npm install يولّد شجرة صالحة للبناء داخل الصورة
-RUN npm install --legacy-peer-deps
+RUN if [ "$SKIP_INSTALL" = "true" ]; then mkdir -p node_modules; else npm install --legacy-peer-deps --prefer-offline --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 --no-audit --no-fund; fi
 
 FROM node:20-alpine AS builder
 WORKDIR /app
+ARG SKIP_INSTALL=false
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Next standalone يتوقع وجود public عند النسخ — المجلد قد يكون غير موجود في المستودع
-RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN if [ "$SKIP_INSTALL" = "true" ] && [ ! -f node_modules/.package-lock.json ] && [ ! -d node_modules/next ]; then echo "SKIP_INSTALL=true requires local node_modules in build context"; exit 1; fi
+# بعد البناء قد لا يبقى مجلد public فارغ — Docker COPY يفشل إن غاب المسار
+RUN npm run build; mkdir -p public
 
 FROM node:20-alpine AS runner
 WORKDIR /app

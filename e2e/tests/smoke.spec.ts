@@ -52,20 +52,68 @@ test.describe("Public shell", () => {
 test.describe("Authenticated shell", () => {
   test.skip(!loginEmail || !loginPassword, "set E2E_LOGIN_EMAIL / E2E_LOGIN_PASSWORD to enable");
 
-  test("nurse dashboard loads without runtime errors", async ({ page }) => {
+  test("auth flow keeps protected session active", async ({ page }) => {
     const errors = await collectConsoleErrors(page);
     await signIn(page);
     await expect(page).toHaveURL(/\/dashboard($|\?)/);
     await page.waitForLoadState("networkidle");
+    const authStatus = await page.evaluate(async () => {
+      const res = await fetch("/api/auth/me", { method: "GET", credentials: "include" });
+      return res.status;
+    });
+    expect(authStatus).toBe(200);
     expect(errors()).toEqual([]);
   });
 
-  test("appointments page loads without runtime errors", async ({ page }) => {
+  test("booking flow critical endpoints stay live after login", async ({ page }) => {
     const errors = await collectConsoleErrors(page);
     await signIn(page);
     await page.goto("/appointments");
     await expect(page).toHaveURL(/\/appointments($|\?)/);
     await page.waitForLoadState("networkidle");
+    const availabilityStatus = await page.evaluate(async () => {
+      const res = await fetch("/api/ops/appointments/availability", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ doctor_id: 0, date: "2026-01-01" }),
+      });
+      return res.status;
+    });
+    // Request may be rejected for business validation, but infra/auth must not crash.
+    expect(availabilityStatus).toBeLessThan(500);
+    expect(availabilityStatus).toBeGreaterThanOrEqual(200);
+    const createStatus = await page.evaluate(async () => {
+      const res = await fetch("/api/ops/appointments/create", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      return res.status;
+    });
+    expect(createStatus).toBeLessThan(500);
+    expect(createStatus).toBeGreaterThanOrEqual(200);
+    expect(errors()).toEqual([]);
+  });
+
+  test("billing flow endpoints stay live after login", async ({ page }) => {
+    const errors = await collectConsoleErrors(page);
+    await signIn(page);
+    await page.goto("/billing");
+    await page.waitForLoadState("networkidle");
+    const localBillingStatus = await page.evaluate(async () => {
+      const res = await fetch("/api/ops/billing/local", { method: "GET", credentials: "include" });
+      return res.status;
+    });
+    expect(localBillingStatus).toBeLessThan(500);
+    expect(localBillingStatus).toBeGreaterThanOrEqual(200);
+    const invoicesStatus = await page.evaluate(async () => {
+      const res = await fetch("/api/ops/billing/local/invoices", { method: "GET", credentials: "include" });
+      return res.status;
+    });
+    expect(invoicesStatus).toBeLessThan(500);
+    expect(invoicesStatus).toBeGreaterThanOrEqual(200);
     expect(errors()).toEqual([]);
   });
 });

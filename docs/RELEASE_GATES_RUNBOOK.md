@@ -3,6 +3,12 @@
 This runbook describes how to execute the release-readiness gates against a
 production-like environment before every launch or major cut.
 
+## Migration authority lock (mandatory)
+
+- Launch migration owner is locked to SQL path: `whatsapp-bridge/sql/migrations` (see `docs/ADR-001-single-source-of-truth-data-model.md`).
+- Do not apply EF Core migrations (`src/ClinicSaaS.Infrastructure/Persistence/Migrations`) to launch/staging databases during the launch window.
+- Any release ticket must record: migration source used, timestamp, and operator.
+
 ## Scope
 
 | Gate | Command | What it validates |
@@ -23,6 +29,15 @@ production-like environment before every launch or major cut.
   `OPS_DASHBOARD_URL=http://127.0.0.1:3001`.
 - `SCHEDULING_SERVICE_TOKEN` (or `HEALTH_DEEP_TOKEN`) exported in the shell.
 - `whatsapp-bridge` (if in scope for the launch) running on `http://127.0.0.1:3101`.
+
+### Event-consumer decision (required before go-live)
+
+Pick and document one option in the release ticket:
+
+- **Required mode:** `event-consumer` is part of go-live baseline and must be healthy in compose/ops.
+- **Optional mode:** core launch does not require it; accepted behavior is sync path continues while stream fan-out lags/skips if consumer is down.
+
+If this is not documented, launch is blocked.
 
 ## Manual run (order matters)
 
@@ -66,3 +81,5 @@ Attach both to the release ticket alongside the signed UAT checklist.
    `"status": "healthy"` (or `"degraded"` only when `GO_LIVE_ALLOW_DEGRADED=1`
    is explicitly approved).
 4. Signed UAT checklist attached to the release ticket.
+5. `e2e-go-live-report.json` artifact present from latest release-gates run.
+6. Event-consumer mode (`required` or `optional`) explicitly recorded in release evidence.

@@ -6,12 +6,16 @@ catch regressions in the shell and the most critical happy paths.
 
 ## Scope
 
-Three scenarios:
+Three go-live critical scenarios:
 
 1. `/login` renders the form.
 2. `/dashboard` redirects when no session cookie is present.
-3. Authenticated users can open the nurse board and the appointments view
-   without JavaScript runtime errors.
+3. Authenticated booking flow checks keep `/appointments` and booking APIs
+   (`/api/ops/appointments/availability`, `/api/ops/appointments/create`) live
+   without runtime crashes.
+4. Authenticated billing flow checks keep `/billing` and billing APIs
+   (`/api/ops/billing/local`, `/api/ops/billing/local/invoices`) live without
+   runtime crashes.
 
 ## Local run
 

@@ -53,7 +53,13 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string; otp_required?: boolean };
+      const j = (await r.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        detail?: string;
+        otp_required?: boolean;
+        upstream_http_status?: number;
+      };
       if (j.otp_required) {
         setSuperAdminMfaStep(true);
         setOtpCode("");
@@ -61,10 +67,47 @@ export default function LoginPage() {
         return;
       }
       if (!r.ok || !j.ok) {
-        if (j.error === "auth_unavailable" || r.status === 502) {
+        if (j.error === "auth_misconfigured" || j.error === "auth_unavailable" || r.status === 502 || r.status === 503) {
           throw new Error(
-            "خدمة المصادقة غير متصلة. شغّل ops-dashboard على المنفذ 3001 (من مجلد ops-dashboard: npm run dev) وتأكد أن OPS_DASHBOARD_URL في apps/web يشير إلى نفس العنوان.",
+            "خدمة المصادقة غير متصلة أو غير مضبوطة. على السيرفر: تأكد أن حاوية clinic-web لديها OPS_DASHBOARD_URL=http://ops-dashboard:3001 (أو نفس قيمة docker-compose) ثم أعد تشغيل clinic-web.",
           );
+        }
+        if (j.error === "misconfiguration") {
+          throw new Error(
+            "إعدادات خادم المصادقة غير صالحة للإنتاج (مثلاً SUPERADMIN_DEV_OTP مفعّل في ops-dashboard). أزل SUPERADMIN_DEV_OTP وNEXT_PUBLIC_SUPERADMIN_DEV_OTP من بيئة الإنتاج وأعد تشغيل ops-dashboard.",
+          );
+        }
+        if (j.error === "ip_not_allowed") {
+          throw new Error(
+            "عنوان IP الحالي غير مسموح به لتسجيل دخول مشرف المنصة. حدّث قائمة السماح في إعدادات الأمان أو اتصل بالمسؤول.",
+          );
+        }
+        if (
+          j.error === "auth_upstream_error" ||
+          (r.status >= 500 && !j.error)
+        ) {
+          throw new Error(
+            "حدث خطأ في خادم المصادقة. راجع سجلات حاوية ops-dashboard على الخادم (docker compose logs ops-dashboard) وتأكد من JWT_SECRET وقاعدة البيانات والترحيلات.",
+          );
+        }
+        if (j.error === "mfa_required") {
+          throw new Error(
+            "رمز المصادقة الثنائية غير صحيح أو منتهٍ. استخدم الرمز الحالي من التطبيق، وتأكد أن الوقت تلقائي على الهاتف وأن المفتاح مطابق لما سجّلته في قاعدة البيانات.",
+          );
+        }
+        if (j.error === "missing_session_cookie") {
+          throw new Error(
+            "تعذر إنشاء الجلسة بعد نجاح المصادقة. حدّث صفحة الويب (نسخة apps/web) أو أعد بناء حاوية clinic-web؛ قد يكون استخراج Set-Cookie من الخادم الخلفي غير مكتمل.",
+          );
+        }
+        if (
+          j.error === "Invalid credentials" ||
+          j.error === "invalid_credentials"
+        ) {
+          throw new Error("البريد أو كلمة المرور غير صحيحة.");
+        }
+        if (j.error === "internal_error" && j.detail) {
+          throw new Error(`خطأ داخلي: ${j.detail}`);
         }
         throw new Error(j.error || "فشل تسجيل الدخول");
       }

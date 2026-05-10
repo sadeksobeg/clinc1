@@ -8,7 +8,14 @@
  * Env (defaults match p5 smoke):
  *   P6_BASE_WEB — default http://127.0.0.1:3000
  */
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
 const baseWeb = process.env.P6_BASE_WEB || process.env.P5_BASE_WEB || "http://127.0.0.1:3000";
+const databaseUrl = (process.env.DATABASE_URL || "").trim();
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const requireFromOps = createRequire(path.join(repoRoot, "ops-dashboard", "package.json"));
 
 function extractCookie(setCookie) {
   if (!setCookie) return "";
@@ -21,10 +28,14 @@ async function request(url, init = {}) {
 }
 
 async function login() {
-  const creds = [
+  const envEmail = (process.env.P5_LOGIN_EMAIL || "").trim();
+  const envPassword = (process.env.P5_LOGIN_PASSWORD || "").trim();
+  const creds = [];
+  if (envEmail && envPassword) creds.push({ email: envEmail, password: envPassword });
+  creds.push(
     { email: "ops@local.test", password: "Admin12345!" },
     { email: "admin@example.com", password: "Admin12345!" },
-  ];
+  );
   for (const c of creds) {
     const r = await request(`${baseWeb}/api/auth/login`, {
       method: "POST",
@@ -38,6 +49,30 @@ async function login() {
   return "";
 }
 
+async function ensureSmokeLoginUser() {
+  if (!databaseUrl) return;
+  const pg = requireFromOps("pg");
+  const bcrypt = requireFromOps("bcryptjs");
+  const client = new pg.Client({ connectionString: databaseUrl, connectionTimeoutMillis: 15_000 });
+  await client.connect();
+  try {
+    const passwordHash = bcrypt.hashSync("Admin12345!", 10);
+    await client.query(
+      `INSERT INTO staff_users (clinic_id, email, display_name, role, password_hash, is_active, deleted_at)
+       VALUES (1, 'ops@local.test', 'Ops Smoke Admin', 'admin', $1, TRUE, NULL)
+       ON CONFLICT (clinic_id, email) DO UPDATE
+       SET password_hash = EXCLUDED.password_hash,
+           role = 'admin',
+           is_active = TRUE,
+           deleted_at = NULL,
+           updated_at = NOW()`,
+      [passwordHash],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 function assert(name, cond, detail) {
   const pass = Boolean(cond);
   console.log(`${pass ? "PASS" : "FAIL"} - ${name}: ${detail}`);
@@ -45,7 +80,11 @@ function assert(name, cond, detail) {
 }
 
 async function main() {
-  const cookie = await login();
+  let cookie = await login();
+  if (!cookie) {
+    await ensureSmokeLoginUser();
+    cookie = await login();
+  }
   assert("Login", cookie.length > 0, "session cookie (ops_session) required");
 
   const health0 = await request(`${baseWeb}/api/ops/system/health`, { headers: { cookie } });

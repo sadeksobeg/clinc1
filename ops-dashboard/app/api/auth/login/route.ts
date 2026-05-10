@@ -92,7 +92,8 @@ export async function POST(req: Request) {
 
   if (isSuperAdmin) {
     const sec = await readSuperAdminSecurity(pool, matched.id);
-    const ipAllowed = ipMatchesAllowlist(ip, sec.allowlist);
+    const ipPolicyDisabled = ["1", "true", "yes"].includes(String(process.env.SUPERADMIN_IP_ALLOWLIST_DISABLED || "").trim().toLowerCase());
+    const ipAllowed = ipPolicyDisabled ? true : ipMatchesAllowlist(ip, sec.allowlist);
     if (!ipAllowed) {
       await insertAuditLog(pool, {
         clinicId: null,
@@ -112,6 +113,16 @@ export async function POST(req: Request) {
         payload: { ip },
       });
       return NextResponse.json({ ok: false, error: "ip_not_allowed" }, { status: 403 });
+    }
+    if (ipPolicyDisabled) {
+      await writeStructuredLog({
+        level: "warn",
+        eventName: "auth.super_admin.ip_policy_disabled",
+        clinicId: null,
+        userId: Number(matched.id) || null,
+        message: "Super admin IP allowlist disabled by env flag",
+        payload: { ip },
+      });
     }
     const isProduction = process.env.NODE_ENV === "production";
     const devOtpConfigured = (process.env.SUPERADMIN_DEV_OTP || "").trim();

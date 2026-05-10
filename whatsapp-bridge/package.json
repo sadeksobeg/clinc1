@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "postinstall": "patch-package",
+    "sync-env-from-prod": "node scripts/sync-env-from-prod.cjs",
     "start:bridge": "node index.js",
     "open:wa-web": "node scripts/openWaWeb.cjs",
     "start:n8n": "npx n8n",
