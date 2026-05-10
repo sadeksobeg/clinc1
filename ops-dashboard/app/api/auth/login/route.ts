@@ -88,7 +88,8 @@ async function handleLogin(req: Request) {
   const isSuperAdmin = roleLower === "super_admin";
   const platformEligibleRole = roleLower === "super_admin" || roleLower === "ops_admin" || roleLower === "ops_manager";
   const platformScopeEnabled = matched.security_flags && (matched.security_flags as Record<string, unknown>).platform_scope === true;
-  const wantsPlatformScope = platformEligibleRole && platformScopeEnabled;
+  const superAdminWithoutClinic = isSuperAdmin && (!matched.clinic_id || Number(matched.clinic_id) <= 0);
+  const wantsPlatformScope = (platformEligibleRole && platformScopeEnabled) || superAdminWithoutClinic;
 
   if (isSuperAdmin) {
     const sec = await readSuperAdminSecurity(pool, matched.id);

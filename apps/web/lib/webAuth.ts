@@ -49,25 +49,38 @@ export function decodeJwtPayloadUnverified(token: string): (JWTPayload & Record<
   }
 }
 
+/** Ops may issue clinic-scoped JWT for super_admin with clinic_id 0; treat as platform so middleware accepts the session. */
+function normalizeSuperAdminScope(
+  role: string | undefined,
+  scope: "platform" | "clinic",
+  clinicId: number,
+): { scope: "platform" | "clinic"; clinicId: number } {
+  const roleLower = String(role || "").toLowerCase();
+  if (roleLower === "super_admin" && scope === "clinic" && !clinicId) {
+    return { scope: "platform", clinicId: 0 };
+  }
+  return { scope, clinicId };
+}
+
 export async function parseSessionFromToken(token: string): Promise<WebUserSession | null> {
   const key = secretKey();
   const payloadFromDecode = decodeJwtPayloadUnverified(token);
   if (!key && payloadFromDecode) {
-    const clinicId = Number(payloadFromDecode.clinicId || 0);
+    const rawScope =
+      payloadFromDecode.scope === "platform" || payloadFromDecode.scope === "clinic" ? payloadFromDecode.scope : "clinic";
     const role = typeof payloadFromDecode.role === "string" ? payloadFromDecode.role : "";
-    const scope = payloadFromDecode.scope === "platform" || payloadFromDecode.scope === "clinic" ? payloadFromDecode.scope : "clinic";
+    let clinicId = Number(payloadFromDecode.clinicId || 0);
+    let scope = rawScope;
+    ({ scope, clinicId } = normalizeSuperAdminScope(role, scope, clinicId));
     if (!payloadFromDecode.sub) return null;
     if (!(scope === "platform") && !clinicId) return null;
     return {
       user_id: String(payloadFromDecode.sub),
       email: typeof payloadFromDecode.email === "string" ? payloadFromDecode.email : undefined,
       role: role || undefined,
-      scope:
-        payloadFromDecode.scope === "platform" || payloadFromDecode.scope === "clinic"
-          ? (payloadFromDecode.scope as "platform" | "clinic")
-          : "clinic",
+      scope,
       clinic_id:
-        payloadFromDecode.scope === "platform"
+        scope === "platform"
           ? 0
           : clinicId || 0,
       acting_clinic_id: null,
@@ -91,9 +104,11 @@ export async function parseSessionFromToken(token: string): Promise<WebUserSessi
       trialEndsAt?: string | null;
       tokenVersion?: number;
     };
-    const clinicId = Number(p.clinicId || 0);
-    const scope = p.scope === "platform" || p.scope === "clinic" ? p.scope : "clinic";
     const role = String(p.role || "");
+    const rawScope = p.scope === "platform" || p.scope === "clinic" ? p.scope : "clinic";
+    let clinicId = Number(p.clinicId || 0);
+    let scope = rawScope;
+    ({ scope, clinicId } = normalizeSuperAdminScope(role, scope, clinicId));
     if (!p.sub) return null;
     if (!(scope === "platform") && !clinicId) return null;
     return {
