@@ -35,6 +35,13 @@ export function requestIp(req: Request): string {
   const v6Host = /^\[([^\]]+)\](?::\d+)?$/i.exec(hostRaw);
   if (v6Host) return normalizeIp(v6Host[1]!);
 
+  // Cloudflare (و/clinic-web يمرّرها): عنوان الزائر الحقيقي قبل سلسلة X-Forwarded-For
+  const cfConnecting = req.headers.get("cf-connecting-ip")?.trim();
+  if (cfConnecting) {
+    const n = normalizeIp(cfConnecting);
+    if (n !== "unknown") return n;
+  }
+
   const forwarded = normalizeIp(req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "");
   if (forwarded && forwarded !== "unknown") return forwarded;
   return forwarded || "unknown";

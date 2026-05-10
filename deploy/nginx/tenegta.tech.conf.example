@@ -31,6 +31,8 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    # خلف Cloudflare: مرّر عنوان الزائر الحقيقي إلى Next.js (قائمة IP للمشرف)
+    proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
   }
 }
 
@@ -47,5 +49,6 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
   }
 }
