@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # بعد: cd /opt/clinic-os && git pull
 # شغّل: sudo bash scripts/vps-apply-after-git-pull.sh
-# ينسخ snippet nginx (عنوان زائر موثوق عبر CF-Connecting-IP / تجاهل سلسلة XFF المزيّفة)،
-# يحقن CF-Connecting-IP في الموقع إن كان مفقودًا، يعيد تحميل nginx، ثم يبني ويشغّل الحاويات.
+#
+# 1) ينسخ snippet عنوان الزائر الموثوق إلى /etc/nginx/snippets/
+# 2) يعدّل تلقائياً ملف الموقع (افتراضي: /etc/nginx/sites-available/tenegta.tech)
+#    لإضافة include للـ snippet داخل كل location / يوجّه إلى clinic-web / ops
+#    وحذف ترويسات proxy المكررة — دون تعديل يدوي على السيرفر
+# 3) nginx -t && reload
+# 4) بناء وتشغيل ops-dashboard و clinic-web
 
 set -euo pipefail
 
@@ -16,21 +21,19 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
-if [[ -f "$NGINX_SITE" ]]; then
-  if grep -q 'proxy_set_header CF-Connecting-IP' "$NGINX_SITE"; then
-    echo "[nginx] CF-Connecting-IP already present in $NGINX_SITE"
-  else
-    cp -a "$NGINX_SITE" "$NGINX_SITE.bak.cf-$(date +%Y%m%d%H%M%S)"
-    sed -i '/proxy_set_header X-Forwarded-Proto \$scheme;/a\    proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;' "$NGINX_SITE"
-    echo "[nginx] Injected CF-Connecting-IP into $NGINX_SITE (backup created)"
-  fi
-else
-  echo "[nginx] WARN: $NGINX_SITE not found — skip inject. Add CF-Connecting-IP manually or fix NGINX_SITE env."
-fi
-
 mkdir -p /etc/nginx/snippets
 cp -f "$REPO_ROOT/deploy/nginx/snippets/proxy-to-nextjs-cloudflare.conf" /etc/nginx/snippets/proxy-to-nextjs-cloudflare.conf
 echo "[nginx] Snippet synced to /etc/nginx/snippets/proxy-to-nextjs-cloudflare.conf"
+
+if [[ -f "$NGINX_SITE" ]]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[nginx] ERROR: python3 is required to patch $NGINX_SITE (install: apt install python3)"
+    exit 1
+  fi
+  python3 "$REPO_ROOT/scripts/nginx-ensure-trusted-ip-snippet.py" "$NGINX_SITE"
+else
+  echo "[nginx] WARN: $NGINX_SITE not found — skipped auto-patch. Set NGINX_SITE=... or create the site file."
+fi
 
 nginx -t
 systemctl reload nginx
