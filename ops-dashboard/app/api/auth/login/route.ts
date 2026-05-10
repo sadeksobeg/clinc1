@@ -20,7 +20,7 @@ function clientIp(req: Request) {
   return requestIp(req);
 }
 
-export async function POST(req: Request) {
+async function handleLogin(req: Request) {
   const ip = clientIp(req);
   if (!checkLoginRateLimit(ip, 30, 15 * 60_000)) {
     return NextResponse.json({ ok: false, error: "Too many attempts" }, { status: 429 });
@@ -217,4 +217,14 @@ export async function POST(req: Request) {
     maxAge: 60 * 60 * 8,
   });
   return res;
+}
+
+export async function POST(req: Request) {
+  try {
+    return await handleLogin(req);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/auth/login] unhandled", e);
+    return NextResponse.json({ ok: false, error: "internal_error", detail: msg }, { status: 500 });
+  }
 }

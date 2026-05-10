@@ -9,6 +9,9 @@
 #
 # إذا كان الملف على السيرفر معدّلاً مسبقاً بـ Certbot، انسخ كتلة server الخاصة بـ ops فقط
 # أو دمج يدوي بدل استبدال الملف بالكامل.
+# خلف Cloudflare: أضف proxy_set_header CF-Connecting-IP (كما أدناه) أو:
+#   include /etc/nginx/snippets/proxy-to-nextjs-cloudflare.conf;
+#   انظر: deploy/nginx/snippets/proxy-to-nextjs-cloudflare.conf
 
 upstream clinic_web {
   server 127.0.0.1:3000;
