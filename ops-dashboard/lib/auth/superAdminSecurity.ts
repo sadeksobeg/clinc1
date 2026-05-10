@@ -42,6 +42,12 @@ export function requestIp(req: Request): string {
     if (n !== "unknown") return n;
   }
 
+  const trueClient = req.headers.get("true-client-ip")?.trim();
+  if (trueClient) {
+    const n = normalizeIp(trueClient);
+    if (n !== "unknown") return n;
+  }
+
   const xff = req.headers.get("x-forwarded-for")?.trim();
   const xri = req.headers.get("x-real-ip")?.trim();
   const forwarded = normalizeIp(xff || xri || "");

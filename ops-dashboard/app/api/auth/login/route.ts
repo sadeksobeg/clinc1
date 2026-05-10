@@ -112,7 +112,7 @@ async function handleLogin(req: Request) {
         message: "Super admin login blocked by IP policy",
         payload: { ip },
       });
-      return NextResponse.json({ ok: false, error: "ip_not_allowed" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "ip_not_allowed", seen_ip: ip }, { status: 403 });
     }
     if (ipPolicyDisabled) {
       await writeStructuredLog({

@@ -24,15 +24,17 @@ function opsBaseUrl(): string | null {
 function buildForwardHeadersToOps(req: Request): Headers {
   const h = new Headers({ "Content-Type": "application/json" });
   const cf = req.headers.get("cf-connecting-ip")?.trim() || undefined;
+  const tci = req.headers.get("true-client-ip")?.trim() || undefined;
   const xffRaw = req.headers.get("x-forwarded-for")?.trim() || undefined;
   const xri = req.headers.get("x-real-ip")?.trim() || undefined;
   const firstXff = xffRaw?.split(",")[0]?.trim();
-  const client = cf || firstXff || xri;
+  const client = cf || tci || firstXff || xri;
   if (client) {
     h.set("cf-connecting-ip", client);
   }
   if (xffRaw) h.set("x-forwarded-for", xffRaw);
   if (xri) h.set("x-real-ip", xri);
+  if (tci) h.set("true-client-ip", tci);
   return h;
 }
 
@@ -108,6 +110,7 @@ export async function POST(req: Request) {
       error?: string;
       detail?: string;
       otp_required?: boolean;
+      seen_ip?: string;
     };
 
     if (data.otp_required) {
@@ -124,6 +127,9 @@ export async function POST(req: Request) {
       };
       if (typeof data.detail === "string" && data.detail.trim()) {
         payload.detail = data.detail.trim();
+      }
+      if (typeof data.seen_ip === "string" && data.seen_ip.trim()) {
+        payload.seen_ip = data.seen_ip.trim();
       }
       return NextResponse.json(payload, { status });
     }

@@ -59,6 +59,7 @@ export default function LoginPage() {
         detail?: string;
         otp_required?: boolean;
         upstream_http_status?: number;
+        seen_ip?: string;
       };
       if (j.otp_required) {
         setSuperAdminMfaStep(true);
@@ -78,8 +79,11 @@ export default function LoginPage() {
           );
         }
         if (j.error === "ip_not_allowed") {
+          const seen = j.seen_ip?.trim();
           throw new Error(
-            "عنوان IP الحالي غير مسموح به لتسجيل دخول مشرف المنصة. حدّث قائمة السماح في إعدادات الأمان أو اتصل بالمسؤول.",
+            seen
+              ? `عنوان IP الذي يصل به الخادم غير مدرج في قائمة السماح: ${seen}. على السيرفر أضف سطرًا في user_ip_allowlist (مثلاً ${seen}/32) للمستخدم super_admin، أو راجع تمرير ترويسة CF-Connecting-IP في nginx.`
+              : "عنوان IP الحالي غير مسموح به لتسجيل دخول مشرف المنصة. حدّث قائمة السماح في إعدادات الأمان أو اتصل بالمسؤول.",
           );
         }
         if (
