@@ -7,7 +7,8 @@
 #    لإضافة include للـ snippet داخل كل location / يوجّه إلى clinic-web / ops
 #    وحذف ترويسات proxy المكررة — دون تعديل يدوي على السيرفر
 # 3) nginx -t && reload
-# 4) بناء وتشغيل ops-dashboard و clinic-web
+# 4) إعادة تشغيل خدمة whatsapp-bridge على المضيف (إن وُجدت) لتفعيل BRIDGE_BIND_HOST=0.0.0.0
+# 5) بناء وتشغيل ops-dashboard و clinic-web
 
 set -euo pipefail
 
@@ -38,6 +39,26 @@ fi
 nginx -t
 systemctl reload nginx
 echo "[nginx] reloaded OK"
+
+# Restart WhatsApp bridge on the host (if running as a systemd service) so it picks up
+# BRIDGE_BIND_HOST default (0.0.0.0), making :3100 reachable from ops-dashboard container.
+BRIDGE_SERVICE="${BRIDGE_SERVICE:-whatsapp-bridge}"
+if systemctl list-unit-files | grep -q "^${BRIDGE_SERVICE}\.service"; then
+  systemctl restart "${BRIDGE_SERVICE}"
+  echo "[bridge] ${BRIDGE_SERVICE} restarted"
+  sleep 2
+  if ss -tlnp 2>/dev/null | grep -q ":3100"; then
+    if ss -tlnp 2>/dev/null | grep ":3100" | grep -Eq "0\.0\.0\.0:3100|\*:3100|\[::\]:3100"; then
+      echo "[bridge] listening on all interfaces (:3100)"
+    else
+      echo "[bridge] WARN: :3100 is bound to 127.0.0.1 only — set BRIDGE_BIND_HOST=0.0.0.0 in whatsapp-bridge/.env"
+    fi
+  else
+    echo "[bridge] WARN: nothing listening on :3100 after restart — check 'journalctl -u ${BRIDGE_SERVICE} -n 50'"
+  fi
+else
+  echo "[bridge] systemd unit ${BRIDGE_SERVICE}.service not found — skipping restart (override with BRIDGE_SERVICE=<unit>)"
+fi
 
 docker compose -f docker-compose.prod.yml --env-file .env.prod build ops-dashboard clinic-web
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d ops-dashboard clinic-web
