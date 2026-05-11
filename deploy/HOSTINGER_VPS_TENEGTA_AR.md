@@ -200,17 +200,23 @@ node scripts/seed-super-admin.cjs superadmin@tenegta.tech "StrongPasswordHere!" 
 
 `ops-dashboard` يفحص الجسر من **داخل Docker** عبر `http://host.docker.internal:3100/ready`. إن ظهر خطأ مثل **Connect Timeout** لعنوان `172.17.0.1` أو `host.docker.internal`:
 
-1. **يجب أن يستمع الجسر على كل الواجهات** وليس `127.0.0.1` فقط. في `whatsapp-bridge/.env` على الـ VPS عيّن:
+1. **يجب أن يستمع الجسر على كل الواجهات** وليس `127.0.0.1` فقط. الكود يجعل `BRIDGE_BIND_HOST=0.0.0.0` افتراضيًا منذ commit `04d7980`، لذا يكفي إعادة تشغيل خدمة الجسر بعد `git pull`. إن أردت التعيين الصريح أضف في `whatsapp-bridge/.env`:
    - `BRIDGE_BIND_HOST=0.0.0.0`
-   - ثم أعد تشغيل خدمة الجسر (مثلاً `systemctl restart whatsapp-bridge` إن كنت تستخدم systemd).
+   - ثم `systemctl restart whatsapp-bridge` (أو اسم وحدتك في systemd).
 2. تحقق من المضيف: `ss -tlnp | grep 3100` — المتوقع `0.0.0.0:3100` (أو `*:3100`) وليس `127.0.0.1:3100` فقط.
-3. تحقق من الحاوية:  
+3. **UFW يحجب** الاتصال من حاويات Docker إلى المضيف:3100 حتى مع `host.docker.internal`. لذا اسمح لـ subnet شبكة compose فقط:
+   ```bash
+   sudo bash scripts/ufw-allow-bridge-from-docker.sh
+   ```
+   هذا السكربت يكتشف الشبكة (`<project>_default`) وتلقائيًا يضيف:
+   `ufw allow from <docker_subnet> to any port 3100 proto tcp` (idempotent، يُستدعى أيضًا من `vps-apply-after-git-pull.sh`).
+4. تحقق من الحاوية:  
    `docker compose -f docker-compose.prod.yml --env-file .env.prod exec ops-dashboard wget -qO- --timeout=5 http://host.docker.internal:3100/ready`  
    المتوقع: `{"ok":true,"ready":true}` (أو مشابه).
-4. شبكة **docker-compose** ليست بالضرورة `172.17.0.1` (ذلك لـ `docker0` فقط). إن احتجت URL احتياطيًا في `.env.prod` استخرج **Gateway** لشبكة المشروع:  
+5. شبكة **docker-compose** ليست بالضرورة `172.17.0.1` (ذلك لـ `docker0` فقط). إن احتجت URL احتياطيًا في `.env.prod` استخرج **Gateway** لشبكة المشروع:  
    `docker network ls` ثم `docker network inspect <اسم_الشبكة> | grep Gateway`.
 
-لا تفتح المنفذ `3100` للإنترنت العام؛ الربط على `0.0.0.0` مع بقاء الجدار الناري يمنع الوصول الخارجي كافٍ طالما لا يوجد `ufw allow 3100` من العالم.
+القاعدة في UFW مقيّدة بـ subnet داخلية فقط (مثل `172.18.0.0/16`)، فلا تفتح المنفذ على الإنترنت. لا تستخدم `ufw allow 3100/tcp` العام أبدًا.
 
 ## 9) ملاحظات أمان
 

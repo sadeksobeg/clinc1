@@ -9,6 +9,7 @@
 # 3) nginx -t && reload
 # 4) إعادة تشغيل خدمة whatsapp-bridge على المضيف (إن وُجدت) لتفعيل BRIDGE_BIND_HOST=0.0.0.0
 # 5) بناء وتشغيل ops-dashboard و clinic-web
+# 6) فتح قاعدة UFW: من subnet شبكة compose -> المضيف:3100 ليصل ops-dashboard إلى الجسر
 
 set -euo pipefail
 
@@ -63,4 +64,9 @@ fi
 docker compose -f docker-compose.prod.yml --env-file .env.prod build ops-dashboard clinic-web
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d ops-dashboard clinic-web
 echo "[docker] ops-dashboard + clinic-web updated"
+
+# 6) السماح لشبكة compose بالاتصال بالجسر على المضيف (UFW)
+bash "$REPO_ROOT/scripts/ufw-allow-bridge-from-docker.sh" || \
+  echo "[ufw] WARN: ufw-allow-bridge-from-docker.sh failed — bridge deep health may time out."
+
 echo "Done."
