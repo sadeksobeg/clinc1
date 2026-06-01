@@ -115,13 +115,13 @@ async function handleLogin(req: Request) {
       });
       return NextResponse.json({ ok: false, error: "ip_not_allowed", seen_ip: ip }, { status: 403 });
     }
-    if (ipPolicyDisabled) {
+    if (superAdminIpAllowlistBypassEnabled()) {
       await writeStructuredLog({
         level: "warn",
         eventName: "auth.super_admin.ip_policy_disabled",
         clinicId: null,
         userId: Number(matched.id) || null,
-        message: "Super admin IP allowlist disabled by env flag",
+        message: "Super admin IP allowlist bypassed by env flag (non-production only)",
         payload: { ip },
       });
     }
