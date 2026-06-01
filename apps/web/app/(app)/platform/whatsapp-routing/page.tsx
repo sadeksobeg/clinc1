@@ -762,7 +762,7 @@ function RuntimeControlsPanel() {
           />
           <div className="flex gap-cg-2">
             <Button
-              variant="destructive"
+              variant="danger"
               disabled={reason.length < 5 || act.isPending}
               onClick={() => act.mutate("pause_all_outbound")}
             >
@@ -795,7 +795,7 @@ function RuntimeControlsPanel() {
           />
           <div className="flex gap-cg-2">
             <Button
-              variant="destructive"
+              variant="danger"
               disabled={!toNumber || reason.length < 5 || act.isPending}
               onClick={() => act.mutate("pause_number")}
             >
@@ -809,7 +809,7 @@ function RuntimeControlsPanel() {
               استئناف الرقم
             </Button>
             <Button
-              variant="destructive"
+              variant="danger"
               disabled={!toNumber || reason.length < 5 || act.isPending}
               onClick={() => act.mutate("rotate_to_backup")}
             >
