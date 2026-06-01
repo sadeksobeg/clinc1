@@ -275,6 +275,7 @@ export function SettingsTabs() {
           <TabsTrigger value="hours">ساعات العمل</TabsTrigger>
           <TabsTrigger value="whatsapp">واتساب</TabsTrigger>
           <TabsTrigger value="doctors">الأطباء</TabsTrigger>
+          <TabsTrigger value="specialties">التخصصات</TabsTrigger>
           <TabsTrigger value="security">الأمان</TabsTrigger>
         </TabsList>
 
@@ -485,6 +486,12 @@ export function SettingsTabs() {
             </div>
           </div>
         </TabsContent>
+        <TabsContent value="specialties">
+          <div className="mb-cg-3 rounded-xl border border-border/70 bg-muted/20 p-cg-3 text-ds-body text-muted-foreground">
+            التخصصات المُفعّلة لهذه العيادة تُحدَّد من قبل مدير المنصة (Super-admin). إن أردت إضافة/تعطيل تخصص يرجى التواصل مع الدعم.
+          </div>
+          <ClinicSpecialtiesTab />
+        </TabsContent>
         <TabsContent value="security">
           <div className="mb-cg-3 rounded-xl border border-border/70 bg-muted/20 p-cg-3 text-ds-body text-muted-foreground">
             إعدادات الأمان تخص حسابات الإدارة داخل العيادة. ننصح بتفعيل التحقق الثنائي للحسابات الإدارية.
@@ -495,6 +502,76 @@ export function SettingsTabs() {
           </Button>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function ClinicSpecialtiesTab() {
+  const [rows, setRows] = useState<
+    { id: number; code: string; label_ar: string; icon: string | null; is_active: boolean }[] | null
+  >(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchWithRetry("/api/ops/clinic-specialties", { cache: "no-store" });
+        const out = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          rows?: { id: number; code: string; label_ar: string; icon: string | null; is_active: boolean }[];
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok || !out.ok) {
+          setErr(out.error || "فشل التحميل");
+          setRows([]);
+        } else {
+          setRows(out.rows || []);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setErr(e instanceof Error ? e.message : String(e));
+        setRows([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) return <Skeleton className="h-24 w-full" />;
+  if (err) return <p className="text-ds-small text-destructive">{err}</p>;
+  if (!rows || rows.length === 0) {
+    return (
+      <p className="text-ds-small text-muted-foreground">
+        لا توجد تخصصات مُفعّلة. تواصل مع الدعم لإضافة التخصصات المناسبة لعيادتك.
+      </p>
+    );
+  }
+  return (
+    <div className="grid gap-cg-2 md:grid-cols-2">
+      {rows.map((r) => (
+        <div
+          key={r.id}
+          className="flex items-center justify-between rounded-xl border border-border/70 bg-muted/20 px-cg-3 py-cg-2"
+        >
+          <div>
+            <div className="text-ds-body font-medium">{r.label_ar}</div>
+            <div className="text-ds-small text-muted-foreground">{r.code}</div>
+          </div>
+          <span
+            className={`rounded-full px-cg-2 py-cg-1 text-ds-small ${
+              r.is_active ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {r.is_active ? "مفعّل" : "موقوف"}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

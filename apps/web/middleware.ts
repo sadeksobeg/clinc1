@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { canAccessStaff, canAccessSupportAgent } from "@/lib/rbac/routeAccess";
 import { getUserSessionFromHeaders } from "@/lib/webAuth";
 
 const APP_PREFIXES = [
@@ -8,11 +9,13 @@ const APP_PREFIXES = [
   "/appointments",
   "/patients",
   "/doctors",
+  "/staff",
   "/analytics",
   "/ai-center",
   "/billing",
   "/settings",
   "/support",
+  "/support-agent",
   "/ops-center",
   "/admin",
 ];
@@ -97,8 +100,25 @@ export async function middleware(req: NextRequest) {
     clinicId: session.clinic_id,
     userId: session.user_id,
   });
-  const isPlatformSuperAdmin = String(me.role || "").toLowerCase() === "super_admin" && me.scope === "platform";
+  const roleLower = String(me.role || "").toLowerCase();
+  const userScope = me.scope === "platform" ? "platform" : "clinic";
+  const isPlatformSuperAdmin = roleLower === "super_admin" && me.scope === "platform";
   const actingClinicId = Number(req.cookies.get("platform_acting_clinic_id")?.value || 0);
+
+  if (pathname === "/support-agent" || pathname.startsWith("/support-agent/")) {
+    if (!canAccessSupportAgent(roleLower, userScope)) {
+      const r = NextResponse.redirect(new URL("/dashboard", req.url));
+      r.headers.set("x-request-id", requestId);
+      return r;
+    }
+  }
+  if (pathname === "/staff" || pathname.startsWith("/staff/")) {
+    if (!canAccessStaff(roleLower, userScope)) {
+      const r = NextResponse.redirect(new URL("/dashboard", req.url));
+      r.headers.set("x-request-id", requestId);
+      return r;
+    }
+  }
   const clinicScopedPaths = ["/inbox", "/appointments", "/patients", "/doctors", "/ai-center", "/settings", "/support", "/analytics"];
 
   // Hard guard: only platform super admin can access /platform routes.

@@ -36,7 +36,7 @@ services:
       retries: 5
 
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.70.1
     restart: unless-stopped
     depends_on:
       postgres:
@@ -101,8 +101,7 @@ services:
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-ops-dashboard}
       OTEL_DEPLOYMENT_ENV: ${OTEL_DEPLOYMENT_ENV:-production}
       SENTRY_DSN: ${SENTRY_DSN:-}
-      # مؤقت أثناء الإعداد فقط — لا تتركه مفعّلاً في الإنتاج
-      SUPERADMIN_IP_ALLOWLIST_DISABLED: ${SUPERADMIN_IP_ALLOWLIST_DISABLED:-}
+      OPS_WHATSAPP_PRIMARY_HANDLER: ${OPS_WHATSAPP_PRIMARY_HANDLER:-ops}
 
   clinic-web:
     build:

@@ -65,6 +65,7 @@ const files = [
   "migrations/042_platform_action_results.sql",
   "migrations/043_platform_incident_playbooks.sql",
   "migrations/044_platform_outcome_history.sql",
+  "migrations/045_specialty_routing.sql",
 ];
 
 async function tableExists(client, tableName) {

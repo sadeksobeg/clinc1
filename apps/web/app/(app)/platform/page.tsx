@@ -494,6 +494,9 @@ export default function PlatformHomePage() {
         <Button asChild variant="outline">
           <Link href="/platform/search">بحث</Link>
         </Button>
+        <Button asChild variant="outline">
+          <Link href="/platform/whatsapp-routing">توجيه واتساب</Link>
+        </Button>
         <Button asChild>
           <Link href="/ops-center">مركز العمليات</Link>
         </Button>

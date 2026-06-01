@@ -47,6 +47,16 @@ test.describe("Public shell", () => {
     expect(response?.status()).toBeLessThan(500);
     await expect(page).toHaveURL(/\/login($|\?)/);
   });
+
+  test("support-agent redirects unauthenticated users to /login", async ({ page }) => {
+    await page.goto("/support-agent");
+    await expect(page).toHaveURL(/\/login($|\?)/);
+  });
+
+  test("staff redirects unauthenticated users to /login", async ({ page }) => {
+    await page.goto("/staff");
+    await expect(page).toHaveURL(/\/login($|\?)/);
+  });
 });
 
 test.describe("Authenticated shell", () => {
@@ -114,6 +124,18 @@ test.describe("Authenticated shell", () => {
     });
     expect(invoicesStatus).toBeLessThan(500);
     expect(invoicesStatus).toBeGreaterThanOrEqual(200);
+    expect(errors()).toEqual([]);
+  });
+
+  test("billing snapshot uses ops-backed BFF", async ({ page }) => {
+    const errors = await collectConsoleErrors(page);
+    await signIn(page);
+    const status = await page.evaluate(async () => {
+      const res = await fetch("/api/billing/snapshot", { method: "GET", credentials: "include" });
+      return res.status;
+    });
+    expect(status).toBeLessThan(500);
+    expect(status).toBeGreaterThanOrEqual(200);
     expect(errors()).toEqual([]);
   });
 });

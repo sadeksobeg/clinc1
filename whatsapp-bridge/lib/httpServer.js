@@ -1,5 +1,4 @@
 const http = require("http");
-const { isNightMuted } = require("./nightMute");
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -30,6 +29,11 @@ function createHttpServer(config, deps) {
     metrics,
     rateLimiter,
     rateSafety,
+    outboundGates,
+    dailyCaps,
+    warmup,
+    broadcastDetector,
+    auditWriter,
     getReady,
     getWaClient,
     normalizeChatId,
@@ -43,6 +47,13 @@ function createHttpServer(config, deps) {
       checkBeforeSend: () => ({ ok: true }),
       recordAfterSend: () => {},
       sleepJitter: async () => 0,
+    };
+
+  // Fall back to a passthrough when not wired (back-compat for tests / older callers).
+  const gates =
+    outboundGates ||
+    {
+      applyGates: async () => ({ ok: true, jitter_ms: 0, recordSuccess: () => {} }),
     };
 
   const server = http.createServer(async (req, res) => {
@@ -68,9 +79,40 @@ function createHttpServer(config, deps) {
         return;
       }
 
+      // Anti-ban dashboard data source (read-only). Bearer token (same as /send)
+      // — exposed for ops-dashboard anti-ban panel.
+      if (req.method === "GET" && req.url === "/anti-ban/status") {
+        if (config.sendApiToken) {
+          const token = getBearerToken(req);
+          if (token !== config.sendApiToken) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
+            return;
+          }
+        }
+        const body = {
+          ok: true,
+          ready: getReady(),
+          daily_caps: dailyCaps ? dailyCaps.snapshot() : null,
+          warmup: warmup ? warmup.getState() : null,
+          broadcast: broadcastDetector ? broadcastDetector.snapshot() : null,
+          audit_enabled: auditWriter ? auditWriter.enabled : false,
+          ts: new Date().toISOString(),
+        };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(body));
+        return;
+      }
+
       if (req.method !== "POST" || req.url !== "/send") {
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "Not found" }));
+        return;
+      }
+
+      if (config.requireSendApiToken && !config.sendApiToken) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "BRIDGE_SEND_API_TOKEN is required in production" }));
         return;
       }
 
@@ -84,24 +126,15 @@ function createHttpServer(config, deps) {
         }
       }
 
-      if (
-        isNightMuted({
-          startHour: config.nightMuteStartHour,
-          endHour: config.nightMuteEndHour,
-        })
-      ) {
-        metrics.inc("send_night_muted_total");
-        res.writeHead(429, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Night mute: outbound paused." }));
-        return;
-      }
-
       const payload = await parseJsonBody(req);
       const correlationId = String(
         req.headers["x-correlation-id"] || req.headers["X-Correlation-Id"] || "",
       )
         .trim()
         .slice(0, 256);
+      const sendKind = String(req.headers["x-send-kind"] || "patient_reply")
+        .trim()
+        .slice(0, 64) || "patient_reply";
       const to = normalizeChatId(payload.to);
       const text = String(payload.text || "").trim();
 
@@ -115,36 +148,66 @@ function createHttpServer(config, deps) {
         throw new Error("Blocked: group sends are disabled.");
       }
 
-      const rl = rateLimiter.checkOutboundAllowed(to);
-      if (!rl.ok) {
-        metrics.inc("send_rate_limited_total");
-        logEvent("outbound_rate_limited", { to, reason: rl.reason });
-        res.writeHead(429, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: rl.reason }));
+      // Link protection: reject inline URLs unless explicitly tagged with
+      // X-Send-Kind: link (drives the FSM rule "no links inside menus").
+      if (/https?:\/\//i.test(text) && sendKind !== "link") {
+        metrics.inc("send_blocked_total");
+        logEvent("outbound_blocked", { to, reason: "link_without_explicit_kind" });
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "link_without_explicit_kind" }));
         return;
       }
 
-      const sf = safety.checkBeforeSend(to);
-      if (!sf.ok) {
-        metrics.inc("send_safety_blocked_total");
-        logEvent("outbound_safety_blocked", { to, reason: sf.reason });
-        res.writeHead(429, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: sf.reason }));
+      const startedAt = Date.now();
+      // Unified safety stack — same gates as queueDirectSend inside the bridge.
+      const gate = await gates.applyGates(to, text, { kind: sendKind });
+      if (!gate.ok) {
+        if (auditWriter) {
+          void auditWriter.record({
+            chat_id: to,
+            text,
+            status: "blocked",
+            blocked_reason: gate.reason,
+            correlation_id: correlationId || null,
+            send_kind: sendKind,
+          });
+        }
+        res.writeHead(gate.status || 429, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: gate.reason }));
         return;
       }
 
-      const jitterMs = await safety.sleepJitter();
-      if (typeof jitterMs === "number" && jitterMs > 0) {
-        metrics.inc("send_safety_jitter_ms_total", jitterMs);
+      try {
+        await queueSend(to, text);
+      } catch (sendErr) {
+        if (auditWriter) {
+          void auditWriter.record({
+            chat_id: to,
+            text,
+            status: "failed",
+            blocked_reason: sendErr && sendErr.message ? String(sendErr.message) : "send_error",
+            correlation_id: correlationId || null,
+            send_kind: sendKind,
+            latency_ms: Date.now() - startedAt,
+          });
+        }
+        throw sendErr;
       }
-      ensureReplyAllowed(to);
-      await queueSend(to, text);
-      safety.recordAfterSend(to);
-      rateLimiter.recordOutbound(rl.chatId, rl.hourState, rl.minuteList);
+      gate.recordSuccess();
 
       metrics.inc("outbound_total");
       if (correlationId) {
-        logEvent("outbound_send", { to, correlation_id: correlationId });
+        logEvent("outbound_send", { to, correlation_id: correlationId, kind: sendKind });
+      }
+      if (auditWriter) {
+        void auditWriter.record({
+          chat_id: to,
+          text,
+          status: "sent",
+          correlation_id: correlationId || null,
+          send_kind: sendKind,
+          latency_ms: Date.now() - startedAt,
+        });
       }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));

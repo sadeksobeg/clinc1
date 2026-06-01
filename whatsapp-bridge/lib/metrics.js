@@ -17,6 +17,10 @@ function createMetrics() {
     send_auth_fail_total: 0,
     send_safety_blocked_total: 0,
     send_safety_jitter_ms_total: 0,
+    send_blocked_total: 0,
+    broadcast_circuit_trips_total: 0,
+    audit_ok_total: 0,
+    audit_fail_total: 0,
     reconnect_total: 0,
     init_fail_total: 0,
     wa_circuit_open_total: 0,
@@ -25,17 +29,33 @@ function createMetrics() {
     outbound_ack_timeout_total: 0,
   };
 
+  // Free-form counters (used for labeled blocked reasons, etc.).
+  const dynamicCounters = new Map();
+
   const gauges = {
     bridge_oldest_inbound_reply_seconds: 0,
     bridge_inbound_webhook_queue_depth: 0,
   };
 
+  /** Provider for live gauges (warmup, daily caps, broadcast). Wire via setGaugeProvider. */
+  let gaugeProvider = null;
+
   function inc(key, n = 1) {
+    // Labeled keys like 'send_blocked_total{reason="..."}' go to dynamicCounters
+    // and are rendered separately so the Prometheus format stays valid.
+    if (typeof key === "string" && key.includes("{")) {
+      dynamicCounters.set(key, (dynamicCounters.get(key) || 0) + n);
+      return;
+    }
     c[key] = (c[key] || 0) + n;
   }
 
   function setGauge(name, value) {
     gauges[name] = Number(value) || 0;
+  }
+
+  function setGaugeProvider(fn) {
+    gaugeProvider = typeof fn === "function" ? fn : null;
   }
 
   function renderPrometheus(ready) {
@@ -109,11 +129,57 @@ function createMetrics() {
       "# HELP bridge_heap_growth_spike_total Memory watchdog heap spike events",
       "# TYPE bridge_heap_growth_spike_total counter",
       `bridge_heap_growth_spike_total ${c.heap_growth_spike_total}`,
+      // ── Anti-ban ───────────────────────────────────────────────────────
+      "# HELP bridge_send_blocked_total Outbound blocked by any safety gate (broadcast, daily caps, rate, night)",
+      "# TYPE bridge_send_blocked_total counter",
+      `bridge_send_blocked_total ${c.send_blocked_total}`,
+      "# HELP bridge_broadcast_circuit_trips_total Broadcast-pattern circuit breaker trips",
+      "# TYPE bridge_broadcast_circuit_trips_total counter",
+      `bridge_broadcast_circuit_trips_total ${c.broadcast_circuit_trips_total}`,
+      "# HELP bridge_audit_ok_total wa_send_audit rows successfully recorded",
+      "# TYPE bridge_audit_ok_total counter",
+      `bridge_audit_ok_total ${c.audit_ok_total}`,
+      "# HELP bridge_audit_fail_total wa_send_audit POSTs that failed (audit is lossy by design)",
+      "# TYPE bridge_audit_fail_total counter",
+      `bridge_audit_fail_total ${c.audit_fail_total}`,
     ];
+    // Labeled blocked-reason counters (e.g. send_blocked_total{reason="rate_safety"} N)
+    for (const [k, v] of dynamicCounters.entries()) {
+      lines.push(`bridge_${k} ${v}`);
+    }
+    // Live gauges from anti-ban modules (computed at scrape time).
+    if (gaugeProvider) {
+      try {
+        const g = gaugeProvider() || {};
+        if (typeof g.warmup_remaining_days === "number") {
+          lines.push("# HELP bridge_wa_warmup_remaining_days Days remaining in warm-up policy");
+          lines.push("# TYPE bridge_wa_warmup_remaining_days gauge");
+          lines.push(`bridge_wa_warmup_remaining_days ${g.warmup_remaining_days}`);
+        }
+        if (typeof g.daily_cap_global_usage === "number") {
+          lines.push("# HELP bridge_wa_daily_cap_global_usage Global daily-cap usage (0..1)");
+          lines.push("# TYPE bridge_wa_daily_cap_global_usage gauge");
+          lines.push(`bridge_wa_daily_cap_global_usage ${g.daily_cap_global_usage}`);
+        }
+        if (typeof g.broadcast_circuit_paused === "number") {
+          lines.push("# HELP bridge_wa_broadcast_circuit_paused 1 = broadcast circuit currently paused, 0 = open");
+          lines.push("# TYPE bridge_wa_broadcast_circuit_paused gauge");
+          lines.push(`bridge_wa_broadcast_circuit_paused ${g.broadcast_circuit_paused}`);
+        }
+      } catch {
+        /* ignore — keep base metrics rendering */
+      }
+    }
     return `${lines.join("\n")}\n`;
   }
 
-  return { inc, setGauge, renderPrometheus, snapshot: () => ({ ...c, gauges: { ...gauges } }) };
+  return {
+    inc,
+    setGauge,
+    setGaugeProvider,
+    renderPrometheus,
+    snapshot: () => ({ ...c, dynamic: Object.fromEntries(dynamicCounters), gauges: { ...gauges } }),
+  };
 }
 
 module.exports = { createMetrics };

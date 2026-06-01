@@ -39,3 +39,19 @@ export function slotListIntro(lines: string): string {
 export function singleSlotConfirmLine(whenLabel: string, doctorName: string): string {
   return `أقرب موعد متاح: ${whenLabel} مع ${doctorName}.\nأرسل 1 للتأكيد.`;
 }
+
+export function chooseSpecialtyIntro(lines: string): string {
+  return `أهلًا بك. اختر التخصص المناسب:\n${lines}\nأرسل رقم الخيار.`;
+}
+
+export function repromptSpecialty(maxIx: number): string {
+  return `أرسل رقمًا بين 1 و ${maxIx}، أو اكتب اسم التخصص.`;
+}
+
+export function noDoctorsForSpecialty(specialtyLabel: string): string {
+  return `لا يوجد أطباء متاحون لتخصص ${specialtyLabel} حاليًا. أرسل 0 للعودة لقائمة التخصصات.`;
+}
+
+export function returningPatientShortcut(doctorName: string): string {
+  return `هل تريد متابعة الحجز مع د. ${doctorName} كالعادة؟\n1) نعم\n2) اختيار طبيب آخر`;
+}

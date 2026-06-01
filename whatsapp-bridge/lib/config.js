@@ -22,8 +22,15 @@ function loadConfig() {
     /** If true, bridge shows clinic menus; otherwise ops-dashboard is the single source of replies. */
     waRoutingMenus: bool(process.env.WA_ROUTING_MENUS, false),
     replyWindowHours: num(process.env.REPLY_WINDOW_HOURS, 72),
-    minReplyDelayMs: num(process.env.REPLY_MIN_DELAY_MS, 1000),
-    maxReplyDelayMs: num(process.env.REPLY_MAX_DELAY_MS, 3000),
+    // Human-paced jitter before every send. Widened defaults to reduce ban
+    // risk on unofficial whatsapp-web.js (was 1000/3000).
+    minReplyDelayMs: num(process.env.REPLY_MIN_DELAY_MS, 1800),
+    maxReplyDelayMs: num(process.env.REPLY_MAX_DELAY_MS, 5500),
+    // Anti-ban rate-safety knobs (read by createRateSafety in index.js)
+    safetyMinIntervalMs: num(process.env.BRIDGE_SAFETY_MIN_INTERVAL_MS, 4000),
+    safetyMaxGlobalPerMinute: num(process.env.BRIDGE_SAFETY_MAX_GLOBAL_PER_MIN, 15),
+    safetyJitterMinMs: num(process.env.BRIDGE_JITTER_MIN_MS, 1500),
+    safetyJitterMaxMs: num(process.env.BRIDGE_JITTER_MAX_MS, 4500),
     allowGroups: bool(process.env.WA_ALLOW_GROUPS, false),
     waChromePath: (process.env.WA_CHROME_PATH || "").trim(),
     waAuthDir: (process.env.WA_AUTH_DIR || "auth-webjs").trim(),
@@ -57,6 +64,10 @@ function loadConfig() {
     webhookHmacSecret: (process.env.N8N_WEBHOOK_HMAC_SECRET || "").trim(),
     /** If set, POST /send requires Authorization: Bearer <token> */
     sendApiToken: (process.env.BRIDGE_SEND_API_TOKEN || "").trim(),
+    /** When true, refuse /send if BRIDGE_SEND_API_TOKEN is unset (auto true when NODE_ENV=production). */
+    requireSendApiToken:
+      String(process.env.NODE_ENV || "").toLowerCase() === "production" ||
+      bool(process.env.BRIDGE_REQUIRE_SEND_TOKEN, false),
     maxRepliesPerHourPerChat: num(process.env.MAX_REPLIES_PER_HOUR_PER_CHAT, 40),
     maxSendsPerMinutePerChat: num(process.env.MAX_SENDS_PER_MINUTE_PER_CHAT, 12),
     /** Optional "night mute" for /send only (local server hour 0-23). Unset = disabled */
@@ -74,7 +85,23 @@ function loadConfig() {
     })(),
     reconnectInitialMs: num(process.env.WA_RECONNECT_INITIAL_MS, 5000),
     reconnectMaxMs: num(process.env.WA_RECONNECT_MAX_MS, 300000),
-    typingIndicatorMs: num(process.env.WA_TYPING_INDICATOR_MS, 0),
+    // Default ON (900ms) to look human: was 0. Override per-deploy if needed.
+    typingIndicatorMs: num(process.env.WA_TYPING_INDICATOR_MS, 900),
+    // Anti-ban daily caps (lib/safety/dailyCaps.js)
+    maxRepliesPerDayPerChat: num(process.env.MAX_REPLIES_PER_DAY_PER_CHAT, 60),
+    maxSendsPerDayGlobal: num(process.env.MAX_SENDS_PER_DAY_GLOBAL, 1500),
+    maxSameTextPerDay: num(process.env.MAX_SAME_TEXT_PER_DAY, 200),
+    dailyCapsStateFile: (process.env.DAILY_CAPS_STATE_FILE || "logs/daily-caps-state.ndjson").trim(),
+    // Broadcast-pattern detector (lib/safety/broadcastDetector.js)
+    broadcastWindowMs: num(process.env.BRIDGE_BROADCAST_WINDOW_MS, 600_000),
+    broadcastUniqueChatsThreshold: num(process.env.BRIDGE_BROADCAST_UNIQUE_CHATS, 12),
+    broadcastPauseMs: num(process.env.BRIDGE_BROADCAST_PAUSE_MS, 300_000),
+    // Audit hook → ops-dashboard /api/internal/wa-audit/record
+    auditEndpointUrl: (process.env.BRIDGE_AUDIT_ENDPOINT_URL || "").trim(),
+    auditEndpointToken: (process.env.BRIDGE_AUDIT_ENDPOINT_TOKEN || process.env.SCHEDULING_SERVICE_TOKEN || "").trim(),
+    auditEnabled: bool(process.env.BRIDGE_AUDIT_ENABLED, false),
+    // Alert webhook for circuit/disconnect/cap-usage events
+    alertWebhookUrl: (process.env.ALERT_WEBHOOK_URL || "").trim(),
     outboundQueueFile: (process.env.OUTBOUND_QUEUE_FILE || "logs/outbound-queue.ndjson").trim(),
     inboundWebhookQueueFile: (process.env.INBOUND_WEBHOOK_QUEUE_FILE || "logs/inbound-webhook-queue.ndjson").trim(),
     inboundWebhookFlushIntervalMs: num(process.env.INBOUND_WEBHOOK_FLUSH_INTERVAL_MS, 30_000),

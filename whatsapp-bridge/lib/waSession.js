@@ -45,9 +45,19 @@ function isUrgentText(text, keywords) {
   return keywords.some((keyword) => content.includes(keyword.toLowerCase()));
 }
 
-/** @param {object} config from loadConfig() @param {{ logEvent: Function, metrics: object, normalizeChatId: Function, alertUrgentTo: string }} ctx */
+/** @param {object} config from loadConfig() @param {{
+ *   logEvent: Function, metrics: object, normalizeChatId: Function, alertUrgentTo: string,
+ *   numberState?: { pairedAt: any },
+ *   auditWriter?: { record: Function, enabled: boolean },
+ *   dailyCaps?: { checkBeforeSend: Function, recordAfterSend: Function, snapshot: Function },
+ *   broadcastDetector?: { checkBeforeSend: Function, recordSend: Function, snapshot: Function },
+ *   warmup?: { getState: Function, adjustCap: Function },
+ *   rateLimiter?: any,
+ *   rateSafety?: any,
+ * }} ctx */
 function createWaSessionManager(config, ctx) {
-  const { logEvent, metrics, normalizeChatId } = ctx;
+  const { logEvent, metrics, normalizeChatId, numberState, auditWriter, dailyCaps, broadcastDetector } = ctx;
+  const { hashText } = require("./safety/dailyCaps");
   const circuit = createWaCircuit(config, { logEvent, metrics });
   const diskQueue = createDiskSendQueue(config.outboundQueueFile);
   const inboundWebhookQueue = createInboundWebhookQueue(config.inboundWebhookQueueFile);
@@ -401,10 +411,24 @@ function createWaSessionManager(config, ctx) {
     const clinicIdNum =
       Number.parseInt(String(config.clinicId).replace(/[^0-9]/g, ""), 10) ||
       1;
+    // to_number: the WhatsApp number this bridge instance is paired to. ops-dashboard
+    // uses it to resolve `whatsapp_inbound_routes` → hub_clinic_id / allowed_clinic_ids
+    // so the same bridge can serve multiple clinics.
+    let toNumber = "";
+    try {
+      const me = state.waClient?.info?.wid?._serialized || "";
+      toNumber = String(me || "").replace(/@.*$/, "");
+      if (toNumber && !toNumber.startsWith("+") && /^[0-9]+$/.test(toNumber)) {
+        toNumber = `+${toNumber}`;
+      }
+    } catch {
+      toNumber = "";
+    }
     const bodyObj = {
       clinic_id: clinicIdNum,
       sender: msg.from,
       from: msg.from,
+      to_number: toNumber || undefined,
       text,
       messageId: msg.id?._serialized || msg.id || "",
       timestamp: msg.timestamp,
@@ -463,10 +487,13 @@ function createWaSessionManager(config, ctx) {
     }
   }
 
-  async function sendWithRetries(to, text) {
+  async function sendWithRetries(to, text, auditMeta) {
     let lastErr;
     const max = Math.max(1, config.sendMaxRetries);
     let sentMsg;
+    const startedAt = Date.now();
+    const sendKind = (auditMeta && auditMeta.send_kind) || "patient_reply";
+    const correlationId = auditMeta && auditMeta.correlation_id ? auditMeta.correlation_id : null;
     for (let attempt = 1; attempt <= max; attempt++) {
       try {
         if (attempt === 1) {
@@ -474,13 +501,45 @@ function createWaSessionManager(config, ctx) {
         } else {
           metrics.inc("outbound_retry_total");
           logEvent("outbound_retry", { to, attempt, error: lastErr?.message || String(lastErr) });
+          if (auditWriter) {
+            void auditWriter.record({
+              chat_id: to,
+              text,
+              status: "retry",
+              blocked_reason: lastErr?.message || String(lastErr || ""),
+              correlation_id: correlationId,
+              send_kind: sendKind,
+              latency_ms: Date.now() - startedAt,
+            });
+          }
           await sleep(config.sendRetryBaseMs * Math.pow(2, attempt - 2));
           sentMsg = await state.waClient.sendMessage(to, text);
+        }
+        if (auditWriter) {
+          void auditWriter.record({
+            chat_id: to,
+            text,
+            status: "sent",
+            correlation_id: correlationId,
+            send_kind: sendKind,
+            latency_ms: Date.now() - startedAt,
+          });
         }
         return sentMsg;
       } catch (error) {
         lastErr = error;
       }
+    }
+    if (auditWriter) {
+      void auditWriter.record({
+        chat_id: to,
+        text,
+        status: "failed",
+        blocked_reason: lastErr?.message || String(lastErr || ""),
+        correlation_id: correlationId,
+        send_kind: sendKind,
+        latency_ms: Date.now() - startedAt,
+      });
     }
     diskQueue.enqueue({ to, text, enqueuedAt: Date.now(), attempts: max });
     logEvent("outbound_failed_persisted", { to, error: lastErr?.message || String(lastErr) });
@@ -548,15 +607,62 @@ function createWaSessionManager(config, ctx) {
     return state.sendQueue;
   }
 
+  /**
+   * queueDirectSend now applies the same anti-ban stack as /send (Phase B2 fix).
+   * `reason` is forwarded to audit as `send_kind`. Use `urgent_handoff` to
+   * bypass daily caps + broadcast circuit (staff alerts must always deliver).
+   */
   async function queueDirectSend(to, text, reason) {
+    const sendKind = reason || "direct";
+    const isStaffAlert = sendKind === "urgent_handoff";
+
     state.sendQueue = state.sendQueue.then(async () => {
+      // 1) Broadcast circuit
+      if (broadcastDetector && !isStaffAlert) {
+        const bc = broadcastDetector.checkBeforeSend();
+        if (!bc.ok) {
+          metrics.inc("send_blocked_total");
+          logEvent("direct_outbound_blocked", { to, reason, blocked_reason: bc.reason });
+          if (auditWriter) {
+            void auditWriter.record({
+              chat_id: to,
+              text,
+              status: "blocked",
+              blocked_reason: bc.reason,
+              send_kind: sendKind,
+            });
+          }
+          return;
+        }
+      }
+
+      // 2) Daily caps
+      if (dailyCaps && !isStaffAlert) {
+        const cap = dailyCaps.checkBeforeSend(to, text);
+        if (!cap.ok) {
+          metrics.inc("send_blocked_total");
+          logEvent("direct_outbound_blocked", { to, reason, blocked_reason: cap.reason, limit: cap.limit, count: cap.count });
+          if (auditWriter) {
+            void auditWriter.record({
+              chat_id: to,
+              text,
+              status: "blocked",
+              blocked_reason: cap.reason,
+              send_kind: sendKind,
+            });
+          }
+          return;
+        }
+      }
+
+      // 3) Human-paced delay (same jitter family as patient_reply)
       const delay = randomDelayMs(config);
       console.log(`[send] direct queue to=${to} reason=${reason} delayMs=${delay}`);
       logEvent("direct_outbound_queued", { to, reason, delayMs: delay, text });
       await sleep(delay);
       const startedAt = Date.now();
       try {
-        const sent = await sendWithRetries(to, text);
+        const sent = await sendWithRetries(to, text, { send_kind: sendKind });
         const latencyMs = Date.now() - startedAt;
         const id = sent?.id?._serialized;
         if (id) state.pendingAcks.set(id, { to, text, sentAt: Date.now() });
@@ -564,6 +670,9 @@ function createWaSessionManager(config, ctx) {
         state.lastOutboundByChat.set(to, t);
         const norm = normalizeChatId(to);
         if (norm) state.lastOutboundByChat.set(norm, t);
+        // Stamp daily caps + broadcast detector AFTER successful send
+        if (dailyCaps && !isStaffAlert) dailyCaps.recordAfterSend(to, text);
+        if (broadcastDetector && !isStaffAlert) broadcastDetector.recordSend(hashText(text), to);
         logEvent("direct_outbound_sent", { to, reason, text, latencyMs });
         logEvent("message_latency", { to, latencyMs, kind: reason || "direct" });
         metrics.inc("outbound_total");
@@ -575,7 +684,8 @@ function createWaSessionManager(config, ctx) {
           reason,
           error: error?.message || String(error),
         });
-        throw error;
+        // queueDirectSend used to throw — that crashes the FSM caller. Swallow now
+        // since audit + disk queue already capture the failure.
       }
     });
     return state.sendQueue;
@@ -593,6 +703,12 @@ function createWaSessionManager(config, ctx) {
       state.reconnectAttempt = 0;
       circuit.recordConnectSuccess();
       console.log("[bridge] WhatsApp connected.");
+      // Set pairedAt once per process so warm-up day-counter is anchored to
+      // the first successful READY this run. Persistent paired_at is held in
+      // ops-dashboard `wa_number_state` and read by admin tools.
+      if (numberState && !numberState.pairedAt) {
+        numberState.pairedAt = new Date();
+      }
       try {
         await drainDiskQueue();
       } catch (e) {
@@ -629,6 +745,14 @@ function createWaSessionManager(config, ctx) {
       state.isReady = false;
       console.error("[bridge] disconnected:", reason);
       logEvent("wa_disconnected", { reason: String(reason) });
+      metrics.inc("wa_session_disconnects_total");
+      // Spike alert: >5 disconnects/hour suggests an account-level WhatsApp issue.
+      state.disconnectStamps = (state.disconnectStamps || []).filter((t) => t > Date.now() - 3_600_000);
+      state.disconnectStamps.push(Date.now());
+      if (state.disconnectStamps.length > 5 && Date.now() - (state.lastDisconnectAlertAt || 0) > 30 * 60_000) {
+        state.lastDisconnectAlertAt = Date.now();
+        logEvent("wa_disconnect_spike", { count_last_hour: state.disconnectStamps.length });
+      }
       circuit.recordDisconnect(String(reason));
       scheduleReconnect(`disconnected:${reason}`);
     });

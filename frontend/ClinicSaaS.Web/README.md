@@ -1,3 +1,10 @@
+# ClinicSaaS.Web (Angular) — DEPRECATED
+
+> **This UI is frozen.** Use **[`apps/web`](../../apps/web)** (Next.js clinic-web) for all new clinic and platform features.  
+> This project remains in the repo only for legacy reference. Do not add routes or features here.
+
+---
+
 # ClinicSaaSWeb
 
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.3.8.

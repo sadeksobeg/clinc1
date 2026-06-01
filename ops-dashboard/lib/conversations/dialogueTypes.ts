@@ -4,6 +4,7 @@
  */
 export type FlowStep =
   | "idle"
+  | "awaiting_specialty"
   | "choose_clinic"
   | "choose_doctor"
   | "slot_offer"
@@ -31,6 +32,13 @@ export type PendingClinicPick = {
   name: string;
 };
 
+export type PendingSpecialtyPick = {
+  ix: number;
+  specialty_id: number;
+  code: string;
+  label_ar: string;
+};
+
 /** Persisted preference from the patient’s booking wording (see `timePreference.ts`). */
 export type DialogueTimePref = "morning" | "afternoon" | "any";
 
@@ -40,11 +48,13 @@ export type StoredDialogueState = {
   collect_field?: "display_name" | null;
   /** After name is saved, continue to doctor list or other step. */
   resume_after_name?: "doctors" | null;
-  pending_kind?: "slots" | "doctors" | "clinics" | null;
+  pending_kind?: "slots" | "doctors" | "clinics" | "specialties" | null;
   pending_slots?: PendingSlotOffer[];
   pending_doctors?: PendingDoctorPick[];
   pending_clinics?: PendingClinicPick[];
+  pending_specialties?: PendingSpecialtyPick[];
   last_specialty?: string | null;
+  last_specialty_id?: number | null;
   hub_clinic_id?: number;
   /** Increments when list parsing fails in an interactive step; threshold triggers human handoff. */
   consecutive_unparsed?: number;

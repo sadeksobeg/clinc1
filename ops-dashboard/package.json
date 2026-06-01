@@ -14,6 +14,7 @@
     "db:apply-scheduling": "node scripts/apply-scheduling-sql.cjs",
     "db:apply-core-outbox": "node scripts/apply-core-outbox-migrations.cjs",
     "db:apply-outbox-blocked": "node scripts/apply-outbox-blocked-migration.cjs",
+    "db:apply-phase1": "node scripts/apply-phase1-security-migrations.cjs",
     "db:provision-local-ops": "node scripts/provision-ops-crm-database.cjs",
     "db:list-tables": "node scripts/db-list-tables.cjs",
     "db:replay-events": "node scripts/replay-domain-events.cjs",

@@ -13,7 +13,7 @@ import { incProductMetric } from "@/lib/observability/productMetrics";
 import { enqueueCoreOutbox } from "@/lib/outbox/coreOutbox";
 import { sendPatientWhatsAppGuarded } from "@/lib/whatsapp/patientOutbound";
 import { interpretInboundHeuristic, interpretInboundText } from "@/lib/scheduling/interpret";
-import { normalizeInboundRules, type NormalizedInboundRules } from "./normalizeInbound";
+import { normalizeInboundRules, resolveInboundRouteContext, type NormalizedInboundRules } from "./normalizeInbound";
 import { parseDialogueState } from "./dialogueParse";
 import { startBookingDialogueFlow, tryConsumeBookingDialogueTurn } from "./bookingDialogueFlow";
 import { runSchedulingDecision, type SchedulingDecision } from "./schedulingDecision";
@@ -59,6 +59,9 @@ const BILLING_LOCKED_REPLY_AR =
 
 export type ProcessInboundContext = {
   correlationId?: string;
+  /** From whatsapp_inbound_routes.allowed_clinic_ids — visible to the booking FSM
+   * via `routing.allowed_clinic_ids` (ephemeral, not persisted). */
+  routeAllowedClinicIds?: number[];
 };
 
 export type ProcessInboundInput = {
@@ -649,6 +652,13 @@ export async function processInboundPostIngest(
       dialogue_state: convRow.rows[0]?.dialogue_state ?? null,
       routing,
     });
+  }
+
+  // Ephemeral merge: surface inbound-route allowed_clinic_ids to the booking FSM
+  // via the in-memory `routing` object. Not written back to DB (would otherwise
+  // grow conversations.routing with redundant config).
+  if (ctx?.routeAllowedClinicIds && ctx.routeAllowedClinicIds.length) {
+    routing = { ...routing, allowed_clinic_ids: ctx.routeAllowedClinicIds };
   }
 
   clinicMetadata = await maybeAutoRollbackWatchWindow(pool, crm.clinic_id, clinicMetadata);
@@ -1486,6 +1496,23 @@ export async function processInboundMessage(
     return { ok: false, error: "missing_sender" };
   }
 
+  // Dynamic clinic_id resolution via whatsapp_inbound_routes (precedence: existing
+  // conversation binding > inbound route hub_clinic_id > rule-based fallback).
+  // Mutates `norm.clinic_id` and surfaces `routeAllowedClinicIds` on ctx for the FSM.
+  let effectiveCtx: ProcessInboundContext | undefined = ctx;
+  try {
+    const rctx = await resolveInboundRouteContext(pool, norm);
+    if (Number.isFinite(rctx.clinic_id) && rctx.clinic_id > 0) {
+      norm.clinic_id = rctx.clinic_id;
+    }
+    if (Array.isArray(rctx.allowed_clinic_ids) && rctx.allowed_clinic_ids.length) {
+      const allowed = rctx.allowed_clinic_ids.filter((n) => Number.isFinite(n) && n > 0);
+      effectiveCtx = { ...(ctx || {}), routeAllowedClinicIds: allowed };
+    }
+  } catch {
+    /* swallow — keep rule-based clinic_id */
+  }
+
   const senderLock = await acquireInboundPatientLock(norm.clinic_id, norm.from);
   if (!senderLock.acquired) {
     void pushDeferredInboundJob(raw as unknown as Record<string, unknown>).catch(() => undefined);
@@ -1584,11 +1611,11 @@ export async function processInboundMessage(
 
   const convLock = await acquireConversationInboundLock(crm.conversation_id);
   if (!convLock.acquired) {
-    const job = await buildPostIngestDeferredJobV2(pool, crm, norm, raw, ctx);
+    const job = await buildPostIngestDeferredJobV2(pool, crm, norm, raw, effectiveCtx);
     const enq = await enqueuePostIngestDeferredV2Job(job);
     if (!enq) {
       incProductMetric("process_inbound_post_ingest_degraded_inline_total");
-      return processInboundPostIngest(pool, crm, norm, raw, ctx);
+      return processInboundPostIngest(pool, crm, norm, raw, effectiveCtx);
     }
     incProductMetric("process_inbound_conversation_lock_contended_total");
     incProductMetric("process_inbound_queued_total");
@@ -1610,7 +1637,7 @@ export async function processInboundMessage(
   }
 
   try {
-    return await processInboundPostIngest(pool, crm, norm, raw, ctx);
+    return await processInboundPostIngest(pool, crm, norm, raw, effectiveCtx);
   } finally {
     await convLock.release();
   }

@@ -1,5 +1,10 @@
 import "server-only";
 
+/**
+ * @deprecated Use `@/lib/ops-billing` for pricing and clinic billing snapshot.
+ * Retained only if enterprise .NET billing endpoints are re-enabled via DOTNET_API_URL.
+ */
+
 /** Base URL of ClinicSaaS.Api (e.g. https://api.example.com or http://127.0.0.1:5080). */
 function dotnetBaseUrl(): string | null {
   const u = process.env.DOTNET_API_URL?.replace(/\/$/, "");

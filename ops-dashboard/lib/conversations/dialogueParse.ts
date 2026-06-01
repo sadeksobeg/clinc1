@@ -96,6 +96,7 @@ export function parseDialogueState(raw: unknown): StoredDialogueState {
   const step = o.flow_step;
   const allowed = new Set([
     "idle",
+    "awaiting_specialty",
     "choose_clinic",
     "choose_doctor",
     "slot_offer",
@@ -128,7 +129,14 @@ export function parseDialogueState(raw: unknown): StoredDialogueState {
     pending_clinics: Array.isArray(o.pending_clinics)
       ? (o.pending_clinics as StoredDialogueState["pending_clinics"])
       : undefined,
+    pending_specialties: Array.isArray(o.pending_specialties)
+      ? (o.pending_specialties as StoredDialogueState["pending_specialties"])
+      : undefined,
     last_specialty: typeof o.last_specialty === "string" ? o.last_specialty : null,
+    last_specialty_id:
+      typeof o.last_specialty_id === "number" && Number.isFinite(o.last_specialty_id)
+        ? Math.floor(o.last_specialty_id)
+        : null,
     hub_clinic_id: typeof o.hub_clinic_id === "number" ? o.hub_clinic_id : undefined,
     consecutive_unparsed:
       typeof o.consecutive_unparsed === "number" && Number.isFinite(o.consecutive_unparsed)

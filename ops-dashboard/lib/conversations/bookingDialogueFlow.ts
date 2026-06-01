@@ -2,14 +2,21 @@ import { DateTime } from "luxon";
 import type { Pool } from "pg";
 import type { InboundIngestRow } from "@/lib/crm/inboundIngest";
 import { confirmAppointment } from "@/lib/scheduling/appointmentService";
-import { listClinics, setConversationSelectedClinicTx } from "@/lib/scheduling/routingActions";
+import {
+  listClinics,
+  listSpecialtiesForClinics,
+  setConversationSelectedClinicTx,
+  setConversationSelectedDoctor,
+  setConversationSelectedSpecialty,
+  type SpecialtyForRouting,
+} from "@/lib/scheduling/routingActions";
 import { explainNoSlots, findNextSlots } from "@/lib/scheduling/slotService";
 import type { InterpretResult } from "@/lib/scheduling/types";
 import { getClinicPublicOpenStatus } from "@/lib/scheduling/clinicPublicHours";
 import { extractBookingEntities, logAiExtract, pickClinicIndexByHint, pickDoctorIndexByHint } from "@/lib/ai/bookingEntityExtract";
 import { findDoctorIdBySpecialtyOrNameToken, specialtySearchTokenFromText } from "@/lib/ai/doctorMatch";
 import { incProductMetric } from "@/lib/observability/productMetrics";
-import { upsertPatientConversationMemory } from "@/lib/conversations/patientConversationMemory";
+import { fetchPatientConversationMemory, upsertPatientConversationMemory } from "@/lib/conversations/patientConversationMemory";
 import { formatClinicTodayHoursAr } from "@/lib/scheduling/clinicPublicHours";
 import type { NormalizedInboundRules } from "./normalizeInbound";
 import { parseListSelectionWithOrdinals1Based, parseTimeOfDayFromText } from "./dialogueParse";
@@ -18,11 +25,14 @@ import {
   askPatientFullName,
   chooseClinicIntro,
   chooseDoctorIntro,
+  chooseSpecialtyIntro,
   confusedRecoveryMenu,
   handoffToSecretary,
+  noDoctorsForSpecialty,
   repromptChooseClinic,
   repromptChooseDoctor,
   repromptChooseSlot,
+  repromptSpecialty,
   singleSlotConfirmLine,
   slotListIntro,
 } from "./patientCopy";
@@ -32,6 +42,7 @@ import type {
   PendingClinicPick,
   PendingDoctorPick,
   PendingSlotOffer,
+  PendingSpecialtyPick,
   StoredDialogueState,
 } from "./dialogueTypes";
 
@@ -148,6 +159,57 @@ async function loadDoctors(
     display_name: row.display_name,
     specialty: row.specialty,
   }));
+}
+
+/**
+ * Cross-clinic doctor list filtered by specialty_id (preferred when patient picks
+ * a specialty from the menu — covers all clinics enrolled in this WhatsApp number).
+ */
+async function loadDoctorsBySpecialtyId(
+  pool: Pool,
+  clinicIds: number[],
+  specialtyId: number,
+): Promise<PendingDoctorPick[]> {
+  if (!clinicIds.length) return [];
+  const r = await pool.query(
+    `SELECT d.id, d.display_name, d.specialty, d.clinic_id
+       FROM doctors d
+       JOIN doctor_specialties ds ON ds.doctor_id = d.id AND ds.specialty_id = $2
+      WHERE d.clinic_id = ANY($1::bigint[])
+        AND d.deleted_at IS NULL
+        AND d.is_active = TRUE
+      ORDER BY ds.is_primary DESC, d.id ASC
+      LIMIT 12`,
+    [clinicIds, specialtyId],
+  );
+  return (r.rows as { id: number; display_name: string; specialty: string }[]).map((row, i) => ({
+    ix: i + 1,
+    doctor_id: row.id,
+    display_name: row.display_name,
+    specialty: row.specialty,
+  }));
+}
+
+function buildSpecialtyPicks(rows: SpecialtyForRouting[]): PendingSpecialtyPick[] {
+  return rows.slice(0, 12).map((s, i) => ({
+    ix: i + 1,
+    specialty_id: s.id,
+    code: s.code,
+    label_ar: s.label_ar,
+  }));
+}
+
+function routingClinicIdsFromInputs(
+  routing: Record<string, unknown>,
+  envIds: number[],
+  fallback: number,
+): number[] {
+  const allowed = Array.isArray(routing.allowed_clinic_ids)
+    ? (routing.allowed_clinic_ids as unknown[]).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0)
+    : [];
+  if (allowed.length) return allowed;
+  if (envIds.length) return envIds;
+  return [fallback];
 }
 
 async function commitSelectedClinic(pool: Pool, conversationId: number, clinicId: number): Promise<void> {
@@ -515,6 +577,85 @@ export async function tryConsumeBookingDialogueTurn(
     return unparsedInteractiveTurn(d, askPatientFullName());
   }
 
+  if (step === "awaiting_specialty" && d.pending_kind === "specialties" && d.pending_specialties?.length) {
+    const pick = parseListSelectionWithOrdinals1Based(norm.text, d.pending_specialties.length);
+    if (pick == null) {
+      return unparsedInteractiveTurn(d, repromptSpecialty(d.pending_specialties.length));
+    }
+    const chosenSpec = d.pending_specialties[pick - 1]!;
+    await setConversationSelectedSpecialty(pool, crm.conversation_id, chosenSpec.specialty_id, chosenSpec.code);
+    void upsertPatientConversationMemory(pool, {
+      clinic_id: crm.clinic_id,
+      patient_id: crm.patient_id,
+      facts_patch: {
+        preferred_specialty_id: chosenSpec.specialty_id,
+        preferred_specialty_code: chosenSpec.code,
+      },
+    }).catch(() => undefined);
+    const envIds = routingClinicIdsFromEnv();
+    const clinicIds = routingClinicIdsFromInputs(args.routing, envIds, crm.clinic_id);
+    const doctors = await loadDoctorsBySpecialtyId(pool, clinicIds, chosenSpec.specialty_id);
+    const tp = dialogueTimePrefFromStored(d);
+    if (doctors.length === 0) {
+      return {
+        reply_text: noDoctorsForSpecialty(chosenSpec.label_ar),
+        finalIntent: "BOOKING",
+        finalPriority: 2,
+        decision_source: "dialogue_no_doctors_for_specialty",
+        handoff_required: false,
+        dialogueMerge: {
+          flow_step: "idle",
+          pending_kind: null,
+          pending_specialties: [],
+          consecutive_unparsed: 0,
+          last_specialty: chosenSpec.code,
+          last_specialty_id: chosenSpec.specialty_id,
+          updated_at: nowIso(),
+        },
+      };
+    }
+    if (doctors.length === 1) {
+      const doc = doctors[0]!;
+      const docR = await pool.query(`SELECT clinic_id FROM doctors WHERE id = $1`, [doc.doctor_id]);
+      const docClinicId = Number(docR.rows[0]?.clinic_id || crm.clinic_id);
+      await setConversationSelectedDoctor(pool, crm.conversation_id, doc.doctor_id, docClinicId);
+      const so = await slotOfferPayload(pool, crm, chosenSpec.code, doc.doctor_id, tp);
+      return {
+        reply_text: `اخترت تخصص ${chosenSpec.label_ar} — د. ${doc.display_name}.\n${so.reply}`,
+        finalIntent: "BOOKING",
+        finalPriority: 2,
+        decision_source: "dialogue_slots_after_specialty",
+        handoff_required: false,
+        dialogueMerge: {
+          ...so.merge,
+          last_specialty: chosenSpec.code,
+          last_specialty_id: chosenSpec.specialty_id,
+          hub_clinic_id: docClinicId,
+        },
+      };
+    }
+    const lines = doctors.map((x) => `${x.ix}) د. ${x.display_name} (${x.specialty})`);
+    return {
+      reply_text: `اخترت تخصص ${chosenSpec.label_ar}.\n${chooseDoctorIntro(lines.join("\n"))}`,
+      finalIntent: "BOOKING",
+      finalPriority: 2,
+      decision_source: "dialogue_choose_doctor_after_specialty",
+      handoff_required: false,
+      dialogueMerge: {
+        flow_step: "choose_doctor",
+        pending_kind: "doctors",
+        pending_doctors: doctors,
+        pending_clinics: [],
+        pending_slots: [],
+        pending_specialties: [],
+        last_specialty: chosenSpec.code,
+        last_specialty_id: chosenSpec.specialty_id,
+        consecutive_unparsed: 0,
+        updated_at: nowIso(),
+      },
+    };
+  }
+
   if (step === "choose_clinic" && d.pending_kind === "clinics" && d.pending_clinics?.length) {
     const pick = parseListSelectionWithOrdinals1Based(norm.text, d.pending_clinics.length);
     if (pick == null) {
@@ -532,6 +673,19 @@ export async function tryConsumeBookingDialogueTurn(
     }
     const doc = d.pending_doctors[pick - 1]!;
     const tp = dialogueTimePrefFromStored(d);
+    // Persist doctor + its clinic so subsequent inbound messages stay routed.
+    const docR = await pool.query(`SELECT clinic_id FROM doctors WHERE id = $1`, [doc.doctor_id]);
+    const docClinicId = Number(docR.rows[0]?.clinic_id || crm.clinic_id);
+    await setConversationSelectedDoctor(pool, crm.conversation_id, doc.doctor_id, docClinicId);
+    void upsertPatientConversationMemory(pool, {
+      clinic_id: docClinicId,
+      patient_id: crm.patient_id,
+      facts_patch: {
+        preferred_doctor_id: doc.doctor_id,
+        last_clinic_id: docClinicId,
+        ...(d.last_specialty_id ? { preferred_specialty_id: d.last_specialty_id } : {}),
+      },
+    }).catch(() => undefined);
     const so = await slotOfferPayload(pool, crm, d.last_specialty, doc.doctor_id, tp);
     return {
       reply_text: `اخترت ${doc.display_name}.\n${so.reply}`,
@@ -727,6 +881,80 @@ export async function startBookingDialogueFlow(
         updated_at: nowIso(),
       },
     };
+  }
+
+  // ── Specialty-first menu ──────────────────────────────────────────────
+  // When patient hasn't named a specialty AND the route has multiple specialties,
+  // ask for specialty BEFORE clinic/doctor. Caller can lock specialty via routing.
+  const selectedSpecialtyId =
+    typeof routing.selected_specialty_id === "number" && Number.isFinite(routing.selected_specialty_id)
+      ? (routing.selected_specialty_id as number)
+      : null;
+  const selectedDoctorId =
+    typeof routing.selected_doctor_id === "number" && Number.isFinite(routing.selected_doctor_id)
+      ? (routing.selected_doctor_id as number)
+      : null;
+
+  // Returning-patient shortcut: if memory has `preferred_doctor_id` and the
+  // doctor is still active, jump straight to slots for that doctor. Skipped
+  // when patient already named a specialty / doctor in this turn.
+  if (!interpret.specialty && !interpret.doctor_hint && selectedSpecialtyId == null && selectedDoctorId == null && hasDisplay) {
+    const memory = await fetchPatientConversationMemory(pool, crm.clinic_id, crm.patient_id).catch(() => null);
+    const preferredDoctorId = Number(memory?.facts_jsonb?.preferred_doctor_id || 0);
+    if (Number.isFinite(preferredDoctorId) && preferredDoctorId > 0) {
+      const dr = await pool.query(
+        `SELECT id, display_name, specialty, clinic_id
+           FROM doctors
+          WHERE id = $1 AND deleted_at IS NULL AND is_active = TRUE
+          LIMIT 1`,
+        [preferredDoctorId],
+      );
+      const doc = dr.rows[0] as
+        | { id: number; display_name: string; specialty: string; clinic_id: number }
+        | undefined;
+      if (doc) {
+        const so = await slotOfferPayload(pool, crm, doc.specialty, doc.id, timePrefActive);
+        return {
+          reply_text: `أهلاً مجددًا. اقترحت لك مواعيد مع د. ${doc.display_name} كالسابق:\n${so.reply}`,
+          finalIntent: "BOOKING",
+          finalPriority: 2,
+          decision_source: "dialogue_returning_patient_shortcut",
+          handoff_required: false,
+          dialogueMerge: {
+            ...so.merge,
+            hub_clinic_id: Number(doc.clinic_id),
+          },
+        };
+      }
+    }
+  }
+
+  if (!interpret.specialty && selectedSpecialtyId == null && selectedDoctorId == null && hasDisplay) {
+    const routeClinicIds = routingClinicIdsFromInputs(routing, envIds, crm.clinic_id);
+    const specs = await listSpecialtiesForClinics(pool, routeClinicIds).catch(() => []);
+    if (specs.length >= 2) {
+      const picks = buildSpecialtyPicks(specs);
+      const lines = picks.map((s) => `${s.ix}) ${s.label_ar}`);
+      return {
+        reply_text: chooseSpecialtyIntro(lines.join("\n")),
+        finalIntent: "BOOKING",
+        finalPriority: 2,
+        decision_source: "dialogue_choose_specialty",
+        handoff_required: false,
+        dialogueMerge: {
+          flow_step: "awaiting_specialty",
+          pending_kind: "specialties",
+          pending_specialties: picks,
+          pending_clinics: [],
+          pending_doctors: [],
+          pending_slots: [],
+          hub_clinic_id: selected ?? crm.clinic_id,
+          consecutive_unparsed: 0,
+          time_pref: tpMerge,
+          updated_at: nowIso(),
+        },
+      };
+    }
   }
 
   if (envIds.length > 1 && selected == null) {

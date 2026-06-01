@@ -8,6 +8,7 @@ import { getBillingSnapshot } from "@/lib/billing/localBilling";
 import { registerSession } from "@/lib/sessionRevocation";
 import { insertAuditLog } from "@/lib/auditTrail";
 import { writeStructuredLog } from "@/lib/observability/trace";
+import { superAdminIpAllowlistBypassEnabled } from "@/lib/auth/superAdminIpPolicy";
 import { ipMatchesAllowlist, readSuperAdminSecurity, requestIp, verifyTotpCode } from "@/lib/auth/superAdminSecurity";
 
 const bodySchema = z.object({
@@ -93,8 +94,7 @@ async function handleLogin(req: Request) {
 
   if (isSuperAdmin) {
     const sec = await readSuperAdminSecurity(pool, matched.id);
-    const ipPolicyDisabled = ["1", "true", "yes"].includes(String(process.env.SUPERADMIN_IP_ALLOWLIST_DISABLED || "").trim().toLowerCase());
-    const ipAllowed = ipPolicyDisabled ? true : ipMatchesAllowlist(ip, sec.allowlist);
+    const ipAllowed = superAdminIpAllowlistBypassEnabled() ? true : ipMatchesAllowlist(ip, sec.allowlist);
     if (!ipAllowed) {
       await insertAuditLog(pool, {
         clinicId: null,

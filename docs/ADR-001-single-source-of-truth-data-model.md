@@ -4,6 +4,8 @@
 
 Accepted + Decision Locked (Launch) — `whatsapp-bridge/sql` is the only migration authority for launch environments; `ops-dashboard + PostgreSQL` remains production source-of-truth for inbound CRM/scheduling flows.
 
+**2026-06 update (Option A):** Clinic UI and WhatsApp operations use **ops-dashboard + apps/web** only. **Angular (`frontend/ClinicSaaS.Web`) is deprecated.** **ClinicSaaS.Api (.NET)** is frozen for daily ops; optional **headless** use for enterprise billing until migrated to ops local billing.
+
 ## Context
 
 The repository currently contains:
@@ -15,22 +17,20 @@ Using both against the **same** database without strict coordination risks drift
 
 ## Decision
 
-1. **One database schema per environment** for production: either the ops path SQL **or** the EF path must own migrations; the other consumes via the same migration history or a **read-only** replica of the same logical model.
-2. **Short term (implemented):** CRM **inbound upsert** that previously lived as raw SQL inside n8n is moved to **ops-dashboard** (`/api/internal/crm/inbound-ingest`) with **parameterized** queries, reducing SQL-in-n8n surface area while keeping one Postgres database for the ops stack.
-3. **Launch freeze:** inbound decisions and writes are owned by the ops SQL path. `.NET` webhook inbound must be disabled when `OPS_WHATSAPP_PRIMARY_HANDLER=ops`.
-4. **Decision locked for launch:** all schema changes on launch/staging environments must be applied from `whatsapp-bridge/sql/migrations` (or scripts that wrap that folder). EF migrations are reference-only during launch and must not be applied to launch/staging databases.
-5. **Medium term (post-launch):** revisit whether EF should become the single long-term owner, but no dual-write migration ownership is allowed during launch.
+1. **One database schema per environment** for production CRM: **ops path SQL** owns migrations; apply via `ops-dashboard` scripts (`npm run db:apply-scheduling`, `npm run db:apply-phase1`).
+2. **Inbound / scheduling / UI:** ops CRM only. Set `OPS_WHATSAPP_PRIMARY_HANDLER=ops`. Bridge/n8n call `POST /api/internal/conversations/process-inbound` only.
+3. **`.NET` webhook inbound** returns `409` when `OPS_WHATSAPP_PRIMARY_HANDLER=ops` ([`WhatsAppController.cs`](../src/ClinicSaaS.Api/Controllers/WhatsAppController.cs)).
+4. **EF migrations** must not be applied to launch/staging CRM databases. Use `clinic_saas_tenant_links` to map `clinic_id` ↔ .NET `tenant_guid` when billing bridge is needed.
+5. **apps/web billing BFF** uses ops `/api/internal/billing/*` (not .NET) unless `DOTNET_API_URL` is explicitly re-enabled for enterprise features.
 
 ## Consequences
 
-- n8n workflows must call HTTP internal APIs for new CRM writes instead of embedding SQL strings.
-- Deployments must document which service applies schema changes first.
-- Release gates and runbooks must fail fast if migration source is ambiguous for a target environment.
+- n8n workflows call HTTP internal APIs for CRM writes instead of embedding SQL strings.
+- Angular and .NET UIs are not deployed for new features.
+- Deployments document `OPS_WHATSAPP_PRIMARY_HANDLER=ops` and run `production-env-audit.mjs` before go-live.
 
 ## Enforcement (Launch Gate)
 
-1. Production-like and launch environments must run schema updates from:
-   - `whatsapp-bridge/sql/migrations/*.sql`
-   - `ops-dashboard` migration scripts that execute those SQL files.
-2. `src/ClinicSaaS.Infrastructure/Persistence/Migrations` stays available for design parity and future consolidation, but is blocked from launch DB apply flows.
-3. Any PR changing both SQL migrations and EF migrations must include a parity note and explicit statement that SQL is the launch owner.
+1. Production-like environments run schema updates from `whatsapp-bridge/sql/migrations/*.sql`.
+2. `SUPERADMIN_IP_ALLOWLIST_DISABLED` is forbidden in production (code + audit script).
+3. E2E/smoke covers login, appointments API, and optional `process-inbound` smoke (`scripts/e2e-booking-inbound-smoke.cjs`).

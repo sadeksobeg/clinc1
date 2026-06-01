@@ -1,41 +1,29 @@
 import { NextResponse } from "next/server";
-import { fetchSubscriptionPricing, fetchTenantCurrent, fetchTenantInvoices, fetchTenantSubscription, fetchTenantUsage } from "@/lib/dotnet-server";
-import { fetchDoctorsRows } from "@/lib/ops-server";
+import { fetchOpsClinicBillingSnapshot } from "@/lib/ops-billing";
 import { requireUserWithClinic } from "@/lib/secure-api";
 
 export async function GET(req: Request) {
   const user = await requireUserWithClinic(req);
   if (user instanceof NextResponse) return user;
-  const [pricing, doctors, tenantCurrent, tenantSub, tenantUsage, tenantInvoices] = await Promise.all([
-    fetchSubscriptionPricing(),
-    fetchDoctorsRows(user.clinic_id),
-    fetchTenantCurrent(),
-    fetchTenantSubscription(),
-    fetchTenantUsage(),
-    fetchTenantInvoices(),
-  ]);
 
-  const doctorCount = doctors.ok ? (doctors.rows ?? []).filter((d) => d.is_active).length : 0;
-  const basePrice = 120;
-  const includedDoctors = 1;
-  const extraDoctorPrice = 30;
-  const extraDoctors = Math.max(0, doctorCount - includedDoctors);
-  const estimatedMonthlyTotal = basePrice + extraDoctors * extraDoctorPrice;
+  const r = await fetchOpsClinicBillingSnapshot(user.clinic_id);
+  if (!r.ok) {
+    return NextResponse.json({ ok: false, error: r.error || "unavailable" }, { status: 503 });
+  }
 
+  const snap = r.snapshot as Record<string, unknown> | undefined;
   return NextResponse.json({
     ok: true,
     billing: {
-      doctor_count: doctorCount,
-      included_doctors: includedDoctors,
-      extra_doctors: extraDoctors,
-      base_price_usd: basePrice,
-      extra_doctor_price_usd: extraDoctorPrice,
-      estimated_monthly_total_usd: estimatedMonthlyTotal,
-      pricing,
-      tenant_current: tenantCurrent,
-      tenant_subscription: tenantSub,
-      tenant_usage: tenantUsage,
-      tenant_invoices: tenantInvoices,
+      doctor_count: snap?.doctor_count ?? 0,
+      included_doctors: snap?.included_doctors ?? 1,
+      extra_doctors: snap?.extra_doctors ?? 0,
+      base_price_usd: snap?.base_price_usd ?? 120,
+      extra_doctor_price_usd: snap?.extra_doctor_price_usd ?? 30,
+      estimated_monthly_total_usd: snap?.estimated_total_usd ?? 120,
+      subscription: snap,
+      invoices: r.invoices ?? [],
+      source: "ops_local_billing",
     },
   });
 }
