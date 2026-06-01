@@ -9,7 +9,7 @@
 
 ## على السيرفر (يدوي)
 
-- [ ] تدوير `JWT_SECRET` و `SCHEDULING_SERVICE_TOKEN` (≥32 حرفًا): `node scripts/generate-production-secrets.mjs`
+- [ ] تدوير/مزامنة الأسرار: `node scripts/sync-production-env.mjs --dry-run` ثم `--apply --rotate-secrets`
 - [ ] تدوير `BRIDGE_SEND_API_TOKEN` ومزامنته مع ops
 - [ ] التأكد أن `.env.prod` **لا** يحتوي `SUPERADMIN_IP_ALLOWLIST_DISABLED=1`
 - [ ] ufw / firewall — منفذ 3100 مغلق من WAN ([BRIDGE_NETWORK_SECURITY.md](./BRIDGE_NETWORK_SECURITY.md))

@@ -15,6 +15,7 @@
     "gate:p7": "node scripts/p7-go-live-gate.mjs",
     "smoke:p8-super-admin": "node scripts/p8-super-admin-smoke.mjs",
     "audit:production-env": "node scripts/production-env-audit.mjs",
-    "e2e:booking-inbound-smoke": "node scripts/e2e-booking-inbound-smoke.cjs"
+    "e2e:booking-inbound-smoke": "node scripts/e2e-booking-inbound-smoke.cjs",
+    "sync:production-env": "node scripts/sync-production-env.mjs"
   }
 }
