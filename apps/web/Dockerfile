@@ -15,6 +15,11 @@ ARG SKIP_INSTALL=false
 # يُثبَّت في طبقة middleware عند `next build` — يجب أن يطابق قيمة التشغيل في compose و ops-dashboard
 ARG JWT_SECRET
 ENV JWT_SECRET=$JWT_SECRET
+# Placeholders for `next build` static analysis only — runtime uses compose env
+ARG OPS_DASHBOARD_URL=http://127.0.0.1:3001
+ARG SCHEDULING_SERVICE_TOKEN=build-time-placeholder-not-used-at-runtime
+ENV OPS_DASHBOARD_URL=$OPS_DASHBOARD_URL
+ENV SCHEDULING_SERVICE_TOKEN=$SCHEDULING_SERVICE_TOKEN
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1

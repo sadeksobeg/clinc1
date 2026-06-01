@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { fetchOpsPricing } from "@/lib/ops-billing";
 
+export const dynamic = "force-dynamic";
+
 /** BFF: public pricing from ops local billing (primary). */
 export async function GET() {
   const r = await fetchOpsPricing();

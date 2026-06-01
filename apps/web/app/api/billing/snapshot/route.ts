@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { fetchOpsClinicBillingSnapshot } from "@/lib/ops-billing";
 import { requireUserWithClinic } from "@/lib/secure-api";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   const user = await requireUserWithClinic(req);
   if (user instanceof NextResponse) return user;

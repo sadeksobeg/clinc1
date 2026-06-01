@@ -1,14 +1,13 @@
 import "server-only";
 
-function opsBaseUrl(): string {
+function opsBaseUrl(): string | null {
   const u = process.env.OPS_DASHBOARD_URL?.replace(/\/$/, "");
-  if (!u) throw new Error("OPS_DASHBOARD_URL is not set");
-  return u;
+  return u && u.length ? u : null;
 }
 
-function serviceHeaders(clinicId?: number): HeadersInit {
+function serviceHeaders(clinicId?: number): HeadersInit | null {
   const token = process.env.SCHEDULING_SERVICE_TOKEN?.trim();
-  if (!token) throw new Error("SCHEDULING_SERVICE_TOKEN is not set");
+  if (!token) return null;
   const h: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
@@ -18,8 +17,11 @@ function serviceHeaders(clinicId?: number): HeadersInit {
 }
 
 export async function fetchOpsPricing(): Promise<{ ok: boolean; pricing?: unknown; error?: string }> {
-  const res = await fetch(`${opsBaseUrl()}/api/internal/billing/pricing`, {
-    headers: serviceHeaders(),
+  const base = opsBaseUrl();
+  const headers = serviceHeaders();
+  if (!base || !headers) return { ok: false, error: "OPS_DASHBOARD_URL is not set" };
+  const res = await fetch(`${base}/api/internal/billing/pricing`, {
+    headers,
     cache: "no-store",
   });
   const data = (await res.json().catch(() => ({}))) as { ok?: boolean; pricing?: unknown; error?: string };
@@ -30,8 +32,11 @@ export async function fetchOpsPricing(): Promise<{ ok: boolean; pricing?: unknow
 export async function fetchOpsClinicBillingSnapshot(
   clinicId: number,
 ): Promise<{ ok: boolean; snapshot?: unknown; invoices?: unknown[]; error?: string }> {
-  const res = await fetch(`${opsBaseUrl()}/api/internal/billing/clinic-billing-snapshot`, {
-    headers: serviceHeaders(clinicId),
+  const base = opsBaseUrl();
+  const headers = serviceHeaders(clinicId);
+  if (!base || !headers) return { ok: false, error: "OPS_DASHBOARD_URL is not set" };
+  const res = await fetch(`${base}/api/internal/billing/clinic-billing-snapshot`, {
+    headers,
     cache: "no-store",
   });
   const data = (await res.json().catch(() => ({}))) as {
