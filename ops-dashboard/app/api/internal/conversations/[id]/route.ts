@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { assertSchedulingServiceToken } from "@/lib/internalAuth";
+import { conversationVisibleToClinicSql } from "@/lib/conversations/clinicVisibility";
 import { opsLogError } from "@/lib/opsLog";
 import { hasIdempotentAudit, insertAuditLog } from "@/lib/auditTrail";
 
@@ -25,33 +26,45 @@ export async function GET(req: Request, ctx: Ctx) {
   if (auth) return auth;
 
   const url = new URL(req.url);
-  const clinicId = Math.max(1, Number.parseInt(url.searchParams.get("clinic_id") || "1", 10) || 1);
+  const rawClinicId = Number.parseInt(url.searchParams.get("clinic_id") || "0", 10);
+  if (!Number.isFinite(rawClinicId) || rawClinicId < 1) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[internal/conversations/[id]] invalid or missing clinic_id query", {
+        rawClinicId,
+        conversation_id: ctx.params.id,
+      });
+    }
+  }
+  const clinicId = Math.max(1, Number.isFinite(rawClinicId) ? rawClinicId : 1);
   const convId = Number(ctx.params.id);
   if (!Number.isFinite(convId)) {
     return NextResponse.json({ ok: false, error: "Bad id" }, { status: 400 });
   }
 
+  const visibleSql = conversationVisibleToClinicSql("$2");
+
   try {
     const pool = getPool();
     const conv = await pool.query(
-      `SELECT c.id, c.state, c.status, c.routing, c.opened_at, c.closed_at,
+      `SELECT c.id, c.clinic_id AS owner_clinic_id, c.state, c.status, c.routing, c.opened_at, c.closed_at,
               p.id AS patient_id, p.chat_id, p.phone_e164, p.display_name, p.notes, p.is_vip, p.is_blacklisted, p.preferred_language
        FROM conversations c
        JOIN patients p ON p.id = c.patient_id
-       WHERE c.id = $1 AND c.clinic_id = $2 AND c.deleted_at IS NULL`,
+       WHERE c.id = $1 AND ${visibleSql} AND c.deleted_at IS NULL`,
       [convId, clinicId],
     );
     if (!conv.rows[0]) {
-      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "not_found_for_clinic" }, { status: 404 });
     }
 
+    const ownerClinicId = Number((conv.rows[0] as { owner_clinic_id: number }).owner_clinic_id);
     const msgs = await pool.query(
       `SELECT id, direction, text, created_at, intent, is_urgent, source
        FROM messages
        WHERE conversation_id = $1 AND clinic_id = $2
        ORDER BY created_at ASC
        LIMIT 500`,
-      [convId, clinicId],
+      [convId, ownerClinicId],
     );
 
     return NextResponse.json({

@@ -42,6 +42,8 @@ type InboxWorkspaceProps = {
   selectedId?: number;
   detail?: ConversationDetail;
   messages?: ConversationMessage[];
+  detailError?: string;
+  actingClinicId?: number;
 };
 
 type UiMessage = ConversationMessage & { clientStatus?: "pending" | "failed" };
@@ -226,7 +228,21 @@ function formatSyncClock(ms: number): string {
   return DateTime.fromMillis(ms).setLocale("ar-SA").toFormat("HH:mm:ss");
 }
 
-export function InboxWorkspace({ rows, selectedId, detail, messages = [] }: InboxWorkspaceProps) {
+function showHubRoutedBadge(row: InboxRow, actingClinicId?: number): boolean {
+  const routed = row.routed_clinic_id;
+  const owner = row.owner_clinic_id;
+  if (routed == null || owner == null || actingClinicId == null) return false;
+  return routed === actingClinicId && owner !== actingClinicId;
+}
+
+export function InboxWorkspace({
+  rows,
+  selectedId,
+  detail,
+  messages = [],
+  detailError,
+  actingClinicId,
+}: InboxWorkspaceProps) {
   const { density, workspaceMode } = useUiPreferences();
   const isCompact = density === "compact";
   const isDoctorMode = workspaceMode === "doctor";
@@ -946,6 +962,9 @@ export function InboxWorkspace({ rows, selectedId, detail, messages = [] }: Inbo
                       <span className="shrink-0 text-ds-label text-muted-foreground">{formatRelativeAge(item.last_message_at ?? null)}</span>
                     </div>
                     <div className="mt-cg-2 flex flex-wrap items-center gap-cg-1">
+                      {showHubRoutedBadge(item, actingClinicId) ? (
+                        <Badge variant="outline">موجّهة من Hub</Badge>
+                      ) : null}
                       {primaryBadge ? <Badge variant={primaryBadge.variant}>{primaryBadge.label}</Badge> : null}
                       {item.unread ? <Badge variant="warning">غير مقروءة</Badge> : null}
                       {item.status ? <Badge variant="outline">{statusLabel(item.status)}</Badge> : null}
@@ -1372,11 +1391,21 @@ export function InboxWorkspace({ rows, selectedId, detail, messages = [] }: Inbo
           className="min-h-0 flex-1 overflow-auto px-cg-4 pe-cg-4"
           style={{ contain: "strict", willChange: "transform" }}
         >
-          {renderedMessages.length === 0 && (
+          {detailError ? (
+            <div className="rounded-2xl border border-warning/40 bg-warning/10 p-cg-4 text-ds-body text-warning">
+              {detailError}
+            </div>
+          ) : null}
+          {renderedMessages.length === 0 && !detailError && (
             <div className="rounded-2xl border border-dashed border-border p-cg-6 text-center text-ds-body text-muted-foreground">
               اختر محادثة لعرض السجل الكامل.
             </div>
           )}
+          {renderedMessages.length === 0 && detailError ? (
+            <div className="mt-cg-3 rounded-2xl border border-dashed border-border p-cg-6 text-center text-ds-body text-muted-foreground">
+              لا توجد رسائل معروضة لهذه المحادثة في العيادة الحالية.
+            </div>
+          ) : null}
           {renderedMessages.length > 0 ? (
             <div
               style={{

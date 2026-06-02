@@ -7,6 +7,7 @@ import {
   recordBridgeSendOutcome,
   sleepHumanLikeJitter,
 } from "@/lib/whatsapp/whatsappSafetyLayer";
+import { opsLogError } from "@/lib/opsLog";
 
 export type BridgeSendResult = { ok: true } | { ok: false; detail: string };
 
@@ -51,6 +52,9 @@ export async function sendViaBridge(
   await acquireGlobalBridgeSendSlot();
   await sleepHumanLikeJitter(policy.kind);
   const base = (process.env.BRIDGE_INTERNAL_URL || "http://127.0.0.1:3100").replace(/\/$/, "");
+  const timeoutMs = Number(process.env.BRIDGE_SEND_TIMEOUT_MS || 5000);
+  const sendTimeout =
+    Number.isFinite(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 60_000 ? timeoutMs : 5000;
   const token = (process.env.BRIDGE_SEND_TOKEN || "").trim();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -61,6 +65,7 @@ export async function sendViaBridge(
       method: "POST",
       headers,
       body: JSON.stringify({ to, text }),
+      signal: AbortSignal.timeout(sendTimeout),
     });
     const bodyText = await res.text();
     if (!res.ok) {
@@ -80,12 +85,19 @@ export async function sendViaBridge(
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    const detail = `fetch_error:${msg.slice(0, 400)}`;
+    opsLogError("bridgeSend.sendViaBridge", e, {
+      bridge_url: base,
+      to: String(to).slice(0, 32),
+      policy_kind: policy.kind,
+      timeout_ms: sendTimeout,
+    });
     await recordBridgeSendOutcome({
       ok: false,
       clinicId: opts?.clinicId ?? null,
       policyKind: policy.kind,
-      detail: `fetch_error:${msg.slice(0, 400)}`,
+      detail,
     });
-    return { ok: false, detail: `fetch_error:${msg.slice(0, 400)}` };
+    return { ok: false, detail };
   }
 }

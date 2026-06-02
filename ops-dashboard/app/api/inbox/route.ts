@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
+import {
+  conversationVisibleToClinicSql,
+  ROUTED_CLINIC_ID_SELECT_SQL,
+} from "@/lib/conversations/clinicVisibility";
 import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +16,11 @@ export async function GET() {
 
   const clinicId = Number(session.clinicId);
   const pool = getPool();
+  const visibleSql = conversationVisibleToClinicSql("$1");
   const r = await pool.query(
     `SELECT c.id AS conversation_id,
+            c.clinic_id AS owner_clinic_id,
+            ${ROUTED_CLINIC_ID_SELECT_SQL},
             c.state,
             c.status,
             p.id AS patient_id,
@@ -28,11 +35,11 @@ export async function GET() {
      LEFT JOIN LATERAL (
        SELECT m.text, m.created_at
        FROM messages m
-       WHERE m.conversation_id = c.id
+       WHERE m.conversation_id = c.id AND m.clinic_id = c.clinic_id
        ORDER BY m.created_at DESC
        LIMIT 1
      ) lm ON TRUE
-     WHERE c.clinic_id = $1
+     WHERE ${visibleSql}
        AND c.deleted_at IS NULL
        AND c.status = 'open'
      ORDER BY lm.created_at DESC NULLS LAST, c.updated_at DESC

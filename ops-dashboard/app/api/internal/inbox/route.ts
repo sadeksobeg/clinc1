@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { assertSchedulingServiceToken } from "@/lib/internalAuth";
+import {
+  conversationVisibleToClinicSql,
+  ROUTED_CLINIC_ID_SELECT_SQL,
+} from "@/lib/conversations/clinicVisibility";
 import { opsLogError } from "@/lib/opsLog";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +22,11 @@ export async function GET(req: Request) {
 
   try {
     const pool = getPool();
+    const visibleSql = conversationVisibleToClinicSql("$1");
     const r = await pool.query(
       `SELECT c.id AS conversation_id,
+              c.clinic_id AS owner_clinic_id,
+              ${ROUTED_CLINIC_ID_SELECT_SQL},
               c.state,
               c.status,
               c.routing,
@@ -64,7 +71,7 @@ export async function GET(req: Request) {
          ORDER BY m.created_at DESC
          LIMIT 1
        ) li ON TRUE
-       WHERE c.clinic_id = $1
+       WHERE ${visibleSql}
          AND c.deleted_at IS NULL
          AND c.status = 'open'
        ORDER BY lm.created_at DESC NULLS LAST, c.updated_at DESC

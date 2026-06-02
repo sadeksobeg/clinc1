@@ -25,6 +25,9 @@ function requireClinicId(clinicId?: number): number {
 
 export type InboxRow = {
   conversation_id: number;
+  /** conversations.clinic_id (Hub owner). */
+  owner_clinic_id?: number;
+  routed_clinic_id?: number | null;
   state: string;
   status: string;
   routing?: Record<string, unknown>;
@@ -60,7 +63,13 @@ export async function fetchInboxRows(clinicId?: number): Promise<{ ok: boolean; 
 export async function fetchConversationDetail(
   conversationId: number,
   clinicId?: number,
-): Promise<{ ok: boolean; conversation?: unknown; messages?: unknown[]; error?: string }> {
+): Promise<{
+  ok: boolean;
+  conversation?: unknown;
+  messages?: unknown[];
+  error?: string;
+  status?: number;
+}> {
   const cid = requireClinicId(clinicId);
   const res = await fetch(
     `${opsBaseUrl()}/api/internal/conversations/${conversationId}?clinic_id=${cid}`,
@@ -72,8 +81,10 @@ export async function fetchConversationDetail(
     messages?: unknown[];
     error?: string;
   };
-  if (!res.ok) return { ok: false, error: data.error || res.statusText };
-  return { ok: true, conversation: data.conversation, messages: data.messages };
+  if (!res.ok) {
+    return { ok: false, error: data.error || res.statusText, status: res.status };
+  }
+  return { ok: true, conversation: data.conversation, messages: data.messages, status: res.status };
 }
 
 export async function proxyProcessInbound(body: Record<string, unknown>): Promise<Response> {

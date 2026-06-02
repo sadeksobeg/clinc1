@@ -66,6 +66,8 @@ const files = [
   "migrations/043_platform_incident_playbooks.sql",
   "migrations/044_platform_outcome_history.sql",
   "migrations/045_specialty_routing.sql",
+  "migrations/046_seed_default_whatsapp_route.sql",
+  "migrations/047_conversations_routing_index.sql",
 ];
 
 async function tableExists(client, tableName) {

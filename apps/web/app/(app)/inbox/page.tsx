@@ -12,11 +12,28 @@ export default async function InboxPage() {
 
   let detail: ConversationDetail | undefined;
   let messages: ConversationMessage[] = [];
+  let detailError: string | undefined;
   if (selectedId) {
-    const detailResult = await fetchConversationDetail(selectedId, clinicId).catch(() => ({ ok: false as const }));
+    const detailResult = await fetchConversationDetail(selectedId, clinicId).catch(() => ({
+      ok: false as const,
+      error: "تعذر تحميل المحادثة",
+    }));
     if (detailResult.ok) {
       detail = detailResult.conversation as ConversationDetail;
       messages = (detailResult.messages ?? []) as ConversationMessage[];
+    } else {
+      detailError =
+        detailResult.error === "not_found_for_clinic"
+          ? "المحادثة غير متاحة لهذه العيادة — اختر العيادة الصحيحة من الشريط العلوي (Clinic mode)."
+          : detailResult.error || "تعذر تحميل الرسائل";
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[inbox] fetchConversationDetail failed", {
+          conversationId: selectedId,
+          clinicId,
+          status: detailResult.status,
+          error: detailResult.error,
+        });
+      }
     }
   }
 
@@ -26,7 +43,14 @@ export default async function InboxPage() {
         <PageHeader title="مركز إدارة المحادثات" subtitle="مساحة إدارة محادثات احترافية" />
       </div>
       <div className="min-h-0 flex-1">
-        <InboxWorkspace rows={rows} selectedId={selectedId} detail={detail} messages={messages} />
+        <InboxWorkspace
+          rows={rows}
+          selectedId={selectedId}
+          detail={detail}
+          messages={messages}
+          detailError={detailError}
+          actingClinicId={clinicId}
+        />
       </div>
     </div>
   );
