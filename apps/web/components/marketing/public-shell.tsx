@@ -36,12 +36,13 @@ export function PublicShell({
   const active = useMemo(() => pathname, [pathname]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="nasaq-gradient px-4 py-2 text-center text-xs font-medium text-white sm:text-sm">
-        ابدأ الآن — 3 أيام مجانية بدون بطاقة دفع
-      </div>
-      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+    <div className="min-h-screen overflow-x-hidden bg-background text-foreground">
+      <header className="sticky top-0 z-50 shadow-sm">
+        <div className="nasaq-gradient px-4 py-2 text-center text-xs font-medium text-white sm:text-sm">
+          ابدأ الآن — 3 أيام مجانية بدون بطاقة دفع
+        </div>
+        <div className="border-b border-border/60 bg-background/95 backdrop-blur-xl">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <Link href="/" className="rounded-xl transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <Logo size="md" showEn />
           </Link>
@@ -94,6 +95,7 @@ export function PublicShell({
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
       </header>
 

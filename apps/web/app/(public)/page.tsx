@@ -11,6 +11,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { brand, brandTitle } from "@/lib/brand";
+import { ScrollReveal } from "@/components/marketing/scroll-reveal";
 import { LandingHero } from "@/features/marketing/landing-hero";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -93,21 +94,26 @@ export default function HomePage() {
     <div className="space-y-24 pb-16 md:space-y-32">
       <LandingHero />
 
-      <section className="mx-auto max-w-7xl px-4 sm:px-6">
-        <p className="mb-6 text-center text-sm font-medium text-muted-foreground">موثوق من فرق طبية في المنطقة</p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          {trustLabels.map((label) => (
-            <span
-              key={label}
-              className="rounded-full border border-border/60 bg-card/60 px-4 py-2 text-sm font-medium text-muted-foreground backdrop-blur-sm transition hover:border-primary/30 hover:text-foreground"
-            >
-              {label}
-            </span>
-          ))}
-        </div>
-      </section>
+      <ScrollReveal>
+        <section className="mx-auto max-w-7xl px-4 sm:px-6">
+          <p className="mb-6 text-center text-sm font-medium text-muted-foreground">موثوق من فرق طبية في المنطقة</p>
+          <div className="trust-marquee overflow-hidden rounded-2xl border border-border/40 bg-muted/20 py-3">
+            <div className="trust-marquee-track flex w-max gap-3 px-4">
+              {[...trustLabels, ...trustLabels].map((label, i) => (
+                <span
+                  key={`${label}-${i}`}
+                  className="rounded-full border border-border/60 bg-card/80 px-4 py-2 text-sm font-medium text-muted-foreground backdrop-blur-sm"
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+      </ScrollReveal>
 
-      <section className="mx-auto max-w-7xl space-y-10 px-4 sm:px-6">
+      <ScrollReveal>
+        <section className="mx-auto max-w-7xl space-y-10 px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-semibold text-primary">لماذا نسق؟</p>
           <h2 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
@@ -149,9 +155,11 @@ export default function HomePage() {
             </ul>
           </Card>
         </div>
-      </section>
+        </section>
+      </ScrollReveal>
 
-      <section className="mx-auto max-w-7xl space-y-10 px-4 sm:px-6">
+      <ScrollReveal>
+        <section className="mx-auto max-w-7xl space-y-10 px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">مميزات مصممة لرفع التحويل</h2>
           <p className="mt-3 text-muted-foreground">كل ما تحتاجه العيادة الحديثة — في منصة واحدة متناسقة.</p>
@@ -167,9 +175,11 @@ export default function HomePage() {
             </Card>
           ))}
         </div>
-      </section>
+        </section>
+      </ScrollReveal>
 
-      <section className="mx-auto max-w-7xl space-y-10 px-4 sm:px-6">
+      <ScrollReveal>
+        <section className="mx-auto max-w-7xl space-y-10 px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">ابدأ في 3 خطوات</h2>
           <p className="mt-3 text-muted-foreground">من التسجيل إلى أول حجز — أقل من ساعة.</p>
@@ -186,8 +196,10 @@ export default function HomePage() {
             </Card>
           ))}
         </div>
-      </section>
+        </section>
+      </ScrollReveal>
 
+      <ScrollReveal>
       <section className="mx-auto max-w-7xl px-4 sm:px-6">
         <Card className="relative overflow-hidden p-10 text-center sm:p-14">
           <div className="pointer-events-none absolute inset-0 nasaq-gradient opacity-[0.07]" aria-hidden />
@@ -205,7 +217,9 @@ export default function HomePage() {
           </div>
         </Card>
       </section>
+      </ScrollReveal>
 
+      <ScrollReveal>
       <section className="mx-auto max-w-7xl space-y-8 px-4 sm:px-6">
         <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">آراء من الميدان</h2>
         <div className="grid gap-5 md:grid-cols-3">
@@ -222,7 +236,9 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+      </ScrollReveal>
 
+      <ScrollReveal>
       <section className="mx-auto max-w-3xl space-y-4 px-4 sm:px-6">
         <h2 className="text-center text-3xl font-bold tracking-tight">أسئلة شائعة</h2>
         {faqs.map((f) => (
@@ -237,7 +253,9 @@ export default function HomePage() {
           </details>
         ))}
       </section>
+      </ScrollReveal>
 
+      <ScrollReveal>
       <section className="mx-auto max-w-7xl px-4 sm:px-6">
         <Card className="relative overflow-hidden p-10 text-center sm:p-14">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--primary)/0.2),transparent_55%)]" aria-hidden />
@@ -258,6 +276,7 @@ export default function HomePage() {
           </div>
         </Card>
       </section>
+      </ScrollReveal>
 
       <script
         type="application/ld+json"
