@@ -9,7 +9,9 @@
 | **C** | منتج P1 Next | [`docs/ANGULAR_SUNSET_MATRIX.md`](ANGULAR_SUNSET_MATRIX.md), `/doctor`, `lib/rbac/defaultLandingPath.ts` |
 | **D** | ذكاء | [`docs/operations/OLLAMA_PRODUCTION_CHECKLIST_AR.md`](operations/OLLAMA_PRODUCTION_CHECKLIST_AR.md), [`docs/ADR-004-postgres-rls-tenant-isolation.md`](ADR-004-postgres-rls-tenant-isolation.md) |
 | **E** | منصة + .NET | [`docs/ADR-005-dotnet-cutover-messaging.md`](ADR-005-dotnet-cutover-messaging.md) |
-| **F** | عالمي | [`docs/ADR-006-whatsapp-business-api-migration.md`](ADR-006-whatsapp-business-api-migration.md), [`docs/ADR-007-emr-prescriptions-greenfield.md`](ADR-007-emr-prescriptions-greenfield.md), [`docs/operations/CI_CD_RELEASE_PIPELINE_AR.md`](operations/CI_CD_RELEASE_PIPELINE_AR.md) |
+| **F** | عالمي | ADR-006 **مؤجّل** (نبقى على web.js), [`docs/ADR-007-emr-prescriptions-greenfield.md`](ADR-007-emr-prescriptions-greenfield.md), [`docs/operations/CI_CD_RELEASE_PIPELINE_AR.md`](operations/CI_CD_RELEASE_PIPELINE_AR.md) |
+
+**دليل السيرفر بعد pull:** [`deploy/VPS_DEPLOY_AFTER_PULL_AR.md`](../deploy/VPS_DEPLOY_AFTER_PULL_AR.md)
 
 ## أوامر npm (جذر المستودع)
 

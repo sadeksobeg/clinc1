@@ -69,4 +69,10 @@ echo "[docker] ops-dashboard + clinic-web updated"
 bash "$REPO_ROOT/scripts/ufw-allow-bridge-from-docker.sh" || \
   echo "[ufw] WARN: ufw-allow-bridge-from-docker.sh failed — bridge deep health may time out."
 
-echo "Done."
+if [[ -x "$REPO_ROOT/deploy/scripts/verify-inbox-whatsapp-fixes.sh" ]]; then
+  echo "[verify] Running inbox/whatsapp verification..."
+  bash "$REPO_ROOT/deploy/scripts/verify-inbox-whatsapp-fixes.sh" || \
+    echo "[verify] WARN: verification had failures — see deploy/VPS_DEPLOY_AFTER_PULL_AR.md"
+fi
+
+echo "Done. Next: deploy/VPS_DEPLOY_AFTER_PULL_AR.md"

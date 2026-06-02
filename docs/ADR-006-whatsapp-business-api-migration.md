@@ -2,7 +2,8 @@
 
 ## Status
 
-**Proposed** — المرحلة F (6–18 شهر).
+**Deferred (product decision 2026-06-02)** — الإبقاء على `whatsapp-web.js` / `whatsapp-bridge` في الإنتاج.  
+لا تُنفَّذ هجرة Cloud API إلا بقرار منتج صريح لاحقاً.
 
 ## Context
 
