@@ -21,16 +21,6 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
-if ! command -v ufw >/dev/null 2>&1; then
-  echo "[ufw] not installed — skipping (Docker traffic will hit iptables directly)."
-  exit 0
-fi
-
-if ! ufw status 2>/dev/null | grep -q "Status: active"; then
-  echo "[ufw] inactive — no firewall rule needed."
-  exit 0
-fi
-
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -73,9 +63,13 @@ if [[ -z "$SUBNET" ]]; then
   exit 1
 fi
 
-echo "[ufw] docker network: $NETWORK_NAME (subnet: $SUBNET)"
+echo "[bridge-net] docker network: $NETWORK_NAME (subnet: $SUBNET)"
 
-if ufw status verbose 2>/dev/null | grep -qF "$COMMENT_TAG"; then
+if ! command -v ufw >/dev/null 2>&1; then
+  echo "[ufw] not installed — using iptables only."
+elif ! ufw status 2>/dev/null | grep -q "Status: active"; then
+  echo "[ufw] inactive — using iptables only."
+elif ufw status verbose 2>/dev/null | grep -qF "$COMMENT_TAG"; then
   echo "[ufw] rule already present."
 else
   ufw allow from "$SUBNET" to any port "$PORT" proto tcp comment "$COMMENT_TAG"
