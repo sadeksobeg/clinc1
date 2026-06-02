@@ -31,6 +31,26 @@ BRIDGE_INTERNAL_URL=http://172.16.1.1:3100
 OPS_WHATSAPP_PRIMARY_HANDLER=ops
 ```
 
+### نموذج التواصل → `info@tenegta.com`
+
+```bash
+cd /opt/clinic-os
+SMTP_PASS='كلمة_مرور_صندوق_البريد' sudo -E bash deploy/scripts/configure-contact-smtp-env.sh
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d clinic-web
+```
+
+أو يدوياً في `.env.prod`:
+
+```env
+CONTACT_TO_EMAIL=info@tenegta.com
+SMTP_HOST=smtp.hostinger.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=info@tenegta.com
+SMTP_PASS=كلمة_مرور_صندوق_البريد
+SMTP_FROM="نسق <info@tenegta.com>"
+```
+
 (استبدل `172.16.1.1` بـ Gateway الفعلي:  
 `docker network inspect clinic-os_default --format '{{(index .IPAM.Config 0).Gateway}}'`)
 

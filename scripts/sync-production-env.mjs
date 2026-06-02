@@ -165,6 +165,21 @@ function main() {
   if (!prod.get("N8N_PUBLIC_WEBHOOK_URL")) prod.set("N8N_PUBLIC_WEBHOOK_URL", "http://127.0.0.1:5678/");
   if (!prod.get("SYSTEM_MODE")) prod.set("SYSTEM_MODE", "production");
 
+  const smtpBefore = Boolean(prod.get("SMTP_HOST") && prod.get("SMTP_PASS"));
+  if (!prod.get("CONTACT_TO_EMAIL")) prod.set("CONTACT_TO_EMAIL", "info@tenegta.com");
+  if (!prod.get("SMTP_HOST")) prod.set("SMTP_HOST", "smtp.hostinger.com");
+  if (!prod.get("SMTP_PORT")) prod.set("SMTP_PORT", "465");
+  if (!prod.get("SMTP_SECURE")) prod.set("SMTP_SECURE", "true");
+  if (!prod.get("SMTP_USER")) prod.set("SMTP_USER", "info@tenegta.com");
+  if (!prod.get("SMTP_FROM")) prod.set("SMTP_FROM", '"نسق <info@tenegta.com>"');
+  if (process.env.SMTP_PASS) {
+    prod.set("SMTP_PASS", process.env.SMTP_PASS);
+    changes.push("set SMTP_PASS from environment");
+  }
+  if (!smtpBefore && !prod.get("SMTP_PASS")) {
+    changes.push("contact SMTP host/user set — add SMTP_PASS for contact form");
+  }
+
   if (rotatePostgres) {
     const pgPass = secret(16);
     prod.set("POSTGRES_PASSWORD", pgPass);
