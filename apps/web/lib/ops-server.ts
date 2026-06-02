@@ -60,16 +60,14 @@ export async function fetchInboxRows(clinicId?: number): Promise<{ ok: boolean; 
   return { ok: true, rows: data.rows || [] };
 }
 
+export type FetchConversationDetailResult =
+  | { ok: true; conversation?: unknown; messages?: unknown[]; status?: number }
+  | { ok: false; error: string; status?: number };
+
 export async function fetchConversationDetail(
   conversationId: number,
   clinicId?: number,
-): Promise<{
-  ok: boolean;
-  conversation?: unknown;
-  messages?: unknown[];
-  error?: string;
-  status?: number;
-}> {
+): Promise<FetchConversationDetailResult> {
   const cid = requireClinicId(clinicId);
   const res = await fetch(
     `${opsBaseUrl()}/api/internal/conversations/${conversationId}?clinic_id=${cid}`,

@@ -17,6 +17,7 @@ export default async function InboxPage() {
     const detailResult = await fetchConversationDetail(selectedId, clinicId).catch(() => ({
       ok: false as const,
       error: "تعذر تحميل المحادثة",
+      status: undefined,
     }));
     if (detailResult.ok) {
       detail = detailResult.conversation as ConversationDetail;
