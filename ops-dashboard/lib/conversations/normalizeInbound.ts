@@ -161,10 +161,11 @@ export async function resolveInboundRouteContext(
   // 1) Reuse existing conversation binding (cheap, common path)
   try {
     const conv = await pool.query(
-      `SELECT clinic_id, routing
-         FROM conversations
-        WHERE clinic_id = ANY(SELECT id FROM clinics WHERE deleted_at IS NULL)
-          AND chat_id = $1
+      `SELECT c.clinic_id, c.routing
+         FROM conversations c
+         JOIN patients p ON p.id = c.patient_id
+        WHERE c.clinic_id = ANY(SELECT id FROM clinics WHERE deleted_at IS NULL)
+          AND p.chat_id = $1
         ORDER BY updated_at DESC
         LIMIT 1`,
       [rules.from],
