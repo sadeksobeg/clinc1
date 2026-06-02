@@ -42,7 +42,7 @@ export function PublicShell({
       </div>
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          <Link href="/" className="hover:opacity-90">
+          <Link href="/" className="rounded-xl transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <Logo size="md" showEn />
           </Link>
           <nav className="hidden items-center gap-6 md:flex">

@@ -117,7 +117,7 @@ export default function LoginPage() {
       <div className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12">
         <div className="absolute inset-0 nasaq-gradient opacity-95" />
         <div className="relative z-10">
-          <Logo size="lg" className="[&_span]:text-white [&_p]:text-white/90" />
+          <Logo size="lg" showEn onDark />
         </div>
         <div className="relative z-10 space-y-4 text-white">
           <h1 className="text-3xl font-bold leading-tight">{brand.taglineAr}</h1>
