@@ -76,13 +76,21 @@ fi
 echo "[ufw] docker network: $NETWORK_NAME (subnet: $SUBNET)"
 
 if ufw status verbose 2>/dev/null | grep -qF "$COMMENT_TAG"; then
-  echo "[ufw] rule already present — nothing to do."
-  exit 0
+  echo "[ufw] rule already present."
+else
+  ufw allow from "$SUBNET" to any port "$PORT" proto tcp comment "$COMMENT_TAG"
+  echo "[ufw] allowed $SUBNET -> :$PORT/tcp"
+  ufw reload >/dev/null 2>&1 || true
 fi
 
-ufw allow from "$SUBNET" to any port "$PORT" proto tcp comment "$COMMENT_TAG"
-echo "[ufw] allowed $SUBNET -> :$PORT/tcp"
-ufw reload >/dev/null 2>&1 || true
+# UFW alone often does not allow container -> host:PORT on Linux (Docker bypasses FORWARD).
+# Always ensure a direct INPUT allow (idempotent).
+if iptables -C INPUT -s "$SUBNET" -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null; then
+  echo "[iptables] INPUT allow $SUBNET -> :$PORT already present."
+else
+  iptables -I INPUT 1 -s "$SUBNET" -p tcp --dport "$PORT" -j ACCEPT
+  echo "[iptables] added INPUT allow $SUBNET -> :$PORT/tcp"
+fi
 
 if command -v ss >/dev/null 2>&1; then
   if ! ss -tlnp 2>/dev/null | grep -E ":${PORT}\b" | grep -Eq "0\.0\.0\.0:${PORT}|\*:${PORT}|\[::\]:${PORT}"; then

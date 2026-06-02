@@ -17,6 +17,13 @@ export type SendViaBridgeOptions = {
   clinicId?: number | null;
 };
 
+function bridgeSendRoots(): string[] {
+  const base = (process.env.BRIDGE_INTERNAL_URL || "http://127.0.0.1:3100").replace(/\/$/, "");
+  const fallback = (process.env.BRIDGE_INTERNAL_FALLBACK_URL || "").replace(/\/$/, "").trim();
+  const roots = [...new Set([base, fallback].filter((x) => x.length > 0))];
+  return roots.length > 0 ? roots : ["http://127.0.0.1:3100"];
+}
+
 /**
  * All server-side calls to the WhatsApp bridge must go through this function.
  * @param policy Required: who/why this send is allowed (reactive / staff alert).
@@ -51,7 +58,7 @@ export async function sendViaBridge(
   }
   await acquireGlobalBridgeSendSlot();
   await sleepHumanLikeJitter(policy.kind);
-  const base = (process.env.BRIDGE_INTERNAL_URL || "http://127.0.0.1:3100").replace(/\/$/, "");
+  const roots = bridgeSendRoots();
   const timeoutMs = Number(process.env.BRIDGE_SEND_TIMEOUT_MS || 5000);
   const sendTimeout =
     Number.isFinite(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 60_000 ? timeoutMs : 5000;
@@ -60,44 +67,44 @@ export async function sendViaBridge(
   if (token) headers.Authorization = `Bearer ${token}`;
   const cid = (opts?.correlationId || "").trim();
   if (cid) headers["X-Correlation-Id"] = cid.slice(0, 256);
-  try {
-    const res = await fetch(`${base}/send`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ to, text }),
-      signal: AbortSignal.timeout(sendTimeout),
-    });
-    const bodyText = await res.text();
-    if (!res.ok) {
+  let lastDetail = "bridge_unreachable";
+  for (const base of roots) {
+    try {
+      const res = await fetch(`${base}/send`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ to, text }),
+        signal: AbortSignal.timeout(sendTimeout),
+      });
+      const bodyText = await res.text();
+      if (!res.ok) {
+        lastDetail = bodyText.slice(0, 800);
+        continue;
+      }
       await recordBridgeSendOutcome({
-        ok: false,
+        ok: true,
         clinicId: opts?.clinicId ?? null,
         policyKind: policy.kind,
-        detail: bodyText.slice(0, 800),
       });
-      return { ok: false, detail: bodyText.slice(0, 800) };
+      return { ok: true };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      lastDetail = `fetch_error:${msg.slice(0, 400)}`;
+      opsLogError("bridgeSend.sendViaBridge", e, {
+        bridge_url: base,
+        to: String(to).slice(0, 32),
+        policy_kind: policy.kind,
+        timeout_ms: sendTimeout,
+      });
     }
-    await recordBridgeSendOutcome({
-      ok: true,
-      clinicId: opts?.clinicId ?? null,
-      policyKind: policy.kind,
-    });
-    return { ok: true };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const detail = `fetch_error:${msg.slice(0, 400)}`;
-    opsLogError("bridgeSend.sendViaBridge", e, {
-      bridge_url: base,
-      to: String(to).slice(0, 32),
-      policy_kind: policy.kind,
-      timeout_ms: sendTimeout,
-    });
-    await recordBridgeSendOutcome({
-      ok: false,
-      clinicId: opts?.clinicId ?? null,
-      policyKind: policy.kind,
-      detail,
-    });
-    return { ok: false, detail };
   }
+  const detail =
+    roots.length > 1 ? `${lastDetail} (tried: ${roots.join(" | ")})` : lastDetail;
+  await recordBridgeSendOutcome({
+    ok: false,
+    clinicId: opts?.clinicId ?? null,
+    policyKind: policy.kind,
+    detail,
+  });
+  return { ok: false, detail };
 }
