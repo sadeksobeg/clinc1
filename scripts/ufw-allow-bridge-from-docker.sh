@@ -98,4 +98,18 @@ if command -v ss >/dev/null 2>&1; then
   fi
 fi
 
+if [[ "${PERSIST_IPTABLES:-}" == "1" ]]; then
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save
+    echo "[iptables] saved via netfilter-persistent."
+  elif [[ -d /etc/iptables ]]; then
+    iptables-save > /etc/iptables/rules.v4
+    echo "[iptables] saved to /etc/iptables/rules.v4"
+  else
+    echo "[iptables] install netfilter-persistent or save rules manually after reboot." >&2
+  fi
+fi
+
 echo "[ufw] done."
+echo "[hint] Use BRIDGE_INTERNAL_URL=http://<Gateway>:${PORT} in .env.prod (IPv4), not host.docker.internal (may resolve to IPv6)."
+echo "[hint] Persist iptables: sudo PERSIST_IPTABLES=1 bash scripts/ufw-allow-bridge-from-docker.sh"
