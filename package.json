@@ -16,6 +16,9 @@
     "smoke:p8-super-admin": "node scripts/p8-super-admin-smoke.mjs",
     "audit:production-env": "node scripts/production-env-audit.mjs",
     "e2e:booking-inbound-smoke": "node scripts/e2e-booking-inbound-smoke.cjs",
-    "sync:production-env": "node scripts/sync-production-env.mjs"
+    "sync:production-env": "node scripts/sync-production-env.mjs",
+    "deploy:phase-a-closeout": "bash deploy/scripts/phase-a-production-closeout.sh",
+    "deploy:release-gates": "bash deploy/scripts/run-release-gates.sh",
+    "deploy:backup": "bash deploy/scripts/backup-clinic-os.sh"
   }
 }

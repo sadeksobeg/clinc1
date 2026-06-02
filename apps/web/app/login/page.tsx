@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { defaultLandingPath } from "@/lib/rbac/defaultLandingPath";
 
 const DEV_SUPERADMIN_OTP =
   process.env.NODE_ENV !== "production" ? (process.env.NEXT_PUBLIC_SUPERADMIN_DEV_OTP || "").trim() : "";
@@ -115,7 +116,10 @@ export default function LoginPage() {
         }
         throw new Error(j.error || "فشل تسجيل الدخول");
       }
-      router.push("/dashboard");
+      const meRes = await fetch("/api/auth/me", { cache: "no-store" });
+      const me = (await meRes.json().catch(() => ({}))) as { role?: string; scope?: string };
+      const dest = defaultLandingPath(String(me.role || "admin"), me.scope);
+      router.push(dest);
       router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "login_failed");

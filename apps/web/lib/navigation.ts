@@ -2,6 +2,7 @@ import {
   BarChart3,
   Bot,
   CalendarDays,
+  ClipboardList,
   CreditCard,
   LayoutDashboard,
   MessageCircle,
@@ -20,6 +21,7 @@ export type NavigationItem = {
 
 export const primaryNavigation: NavigationItem[] = [
   { href: "/dashboard", label: "لوحة القيادة", icon: LayoutDashboard, description: "مركز تشغيل الممرضة والطابور اللحظي" },
+  { href: "/doctor", label: "طابور الطبيب", icon: ClipboardList, description: "مواعيد اليوم والمحادثات العاجلة" },
   { href: "/inbox", label: "صندوق المحادثات", icon: MessageCircle, description: "محادثات واتساب وملف العملاء" },
   { href: "/appointments", label: "المواعيد", icon: CalendarDays, description: "إدارة الجدول وقوائم الانتظار" },
   { href: "/patients", label: "المرضى", icon: UsersRound, description: "إدارة المرضى ومؤشرات المخاطر" },

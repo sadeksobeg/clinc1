@@ -9,6 +9,7 @@ const APP_PREFIXES = [
   "/appointments",
   "/patients",
   "/doctors",
+  "/doctor",
   "/staff",
   "/analytics",
   "/ai-center",

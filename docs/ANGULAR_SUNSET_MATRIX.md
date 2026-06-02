@@ -7,13 +7,13 @@
 | Angular route | Role / notes | Next target (`apps/web`) | Status |
 |---------------|--------------|---------------------------|--------|
 | `/`, `/features`, `/pricing`, `/demo`, `/contact` | Public marketing | `/landing` (+ future marketing pages) | Partial (landing only) |
-| `/login` | Auth | `/login` | Shell (full auth TBD) |
-| `/dashboard` | Logged-in home | `/dashboard` | Shell |
-| `/clinic/reception` | Receptionist | `/inbox` + scheduling (align with ops) | Inbox wired to ops internal API |
+| `/login` | Auth | `/login` | **Functional** — ops session + MFA + role landing |
+| `/dashboard` | Logged-in home | `/dashboard` | **Functional** — NurseCommandCenter + ops data |
+| `/clinic/reception` | Receptionist | `/inbox` + scheduling (align with ops) | **Functional** — inbox + visibility + clinic filter |
 | `/clinic/communications/*` | Campaigns, templates | `/settings` or dedicated comms section | Not started |
 | `/clinic/analytics` | Clinic analytics | `/analytics` | Placeholder |
-| `/clinic/doctor` | Doctor queue | `/staff` or `/dashboard` doctor view | Not started |
-| `/clinic/doctor/billing` | Doctor billing | `/billing` | Placeholder |
+| `/clinic/doctor` | Doctor queue | `/doctor` | **MVP** — today appointments + urgent inbox |
+| `/clinic/doctor/billing` | Doctor billing | `/billing` | **Functional** — ManualBillingWorkspace + ops BFF |
 | `/platform/*` | Platform admin | Not in AppShell yet; add `/platform/...` or admin app | Not started |
 
 ## Suggested order of migration
