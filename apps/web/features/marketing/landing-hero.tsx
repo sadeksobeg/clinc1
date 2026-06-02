@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
@@ -16,6 +16,7 @@ import {
 import { brand } from "@/lib/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HeroBackdrop, HeroMockupTilt } from "@/features/marketing/hero-effects";
 
 const stats = [
   { label: "زيادة الحجوزات", value: "+32%", icon: TrendingUp },
@@ -82,17 +83,9 @@ export function LandingHero() {
         };
 
   return (
-    <section className="hero-section relative isolate overflow-hidden">
-      <div className="hero-mesh hero-mesh-animate pointer-events-none absolute inset-0" aria-hidden />
-      <div className="hero-grid pointer-events-none absolute inset-0 opacity-[0.35]" aria-hidden />
-      <div className="hero-orb hero-orb-a pointer-events-none absolute start-0 top-16 h-64 w-64 rounded-full opacity-50 sm:h-80 sm:w-80" aria-hidden />
-      <div className="hero-orb hero-orb-b pointer-events-none absolute end-0 top-24 h-72 w-72 rounded-full opacity-40 sm:h-96 sm:w-96" aria-hidden />
-      <div className="hero-orb hero-orb-c pointer-events-none absolute bottom-0 start-1/3 h-56 w-56 rounded-full opacity-30" aria-hidden />
-
-      <div className="hero-particles pointer-events-none absolute inset-0" aria-hidden>
-        {[...Array(12)].map((_, i) => (
-          <span key={i} className="hero-particle" style={{ "--i": i } as CSSProperties} />
-        ))}
+    <section className="hero-section relative isolate">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+        <HeroBackdrop />
       </div>
 
       <div className="relative mx-auto grid max-w-7xl gap-12 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:items-center lg:gap-16 lg:py-24">
@@ -102,22 +95,22 @@ export function LandingHero() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
           >
-            <Badge variant="secondary" className="w-fit gap-1.5 border-gradient px-3 py-1.5 shadow-soft">
+            <Badge variant="outline" className="w-fit gap-1.5 border-gradient border-transparent bg-card/95 px-3 py-1.5 text-foreground shadow-soft">
               <Sparkles className="h-3.5 w-3.5 animate-pulse text-primary" />
-              <span className="font-medium">{brand.nameAr}</span>
+              <span className="font-semibold text-primary">{brand.nameAr}</span>
               <span className="text-muted-foreground">—</span>
-              <span>تشغيل عيادات بمعايير عالمية</span>
+              <span className="text-foreground/90">تشغيل عيادات بمعايير عالمية</span>
             </Badge>
           </motion.div>
 
-          <h1 className="text-4xl font-extrabold leading-[1.12] tracking-tight sm:text-5xl lg:text-[3.25rem]">
-            <span className="flex flex-wrap gap-x-2 gap-y-1">
+          <h1 className="overflow-visible text-4xl font-extrabold leading-[1.12] tracking-tight sm:text-5xl lg:text-[3.25rem]">
+            <span className="flex flex-wrap gap-x-2 gap-y-1 overflow-visible">
               {headlineWords.map((word, i) => (
                 <motion.span
                   key={word}
-                  className="text-gradient inline-block"
-                  initial={reduceMotion ? false : { opacity: 0, y: 30, rotateX: -40 }}
-                  animate={{ opacity: 1, y: 0, rotateX: 0 }}
+                  className="text-gradient-shimmer inline-block overflow-visible"
+                  initial={reduceMotion ? false : { opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15 + i * 0.1, duration: 0.55, type: "spring", stiffness: 120 }}
                 >
                   {word}
@@ -200,11 +193,7 @@ export function LandingHero() {
         <motion.div className="relative mx-auto w-full max-w-lg lg:max-w-none lg:ps-4" {...fade(0.2)}>
           <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-bl from-primary/25 via-transparent to-accent/20 blur-3xl" aria-hidden />
 
-          <motion.div
-            className="mockup-ring relative"
-            animate={reduceMotion ? undefined : { y: [0, -10, 0] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-          >
+          <HeroMockupTilt>
             <div className="glass-card relative overflow-hidden rounded-3xl border border-white/25 p-1 shadow-elevated">
               <div className="rounded-[1.35rem] bg-gradient-to-b from-muted/40 to-background p-5 sm:p-6">
                 <div className="mb-4 flex items-center justify-between gap-2">
@@ -286,7 +275,7 @@ export function LandingHero() {
                 </div>
               </div>
             </div>
-          </motion.div>
+          </HeroMockupTilt>
         </motion.div>
       </div>
     </section>

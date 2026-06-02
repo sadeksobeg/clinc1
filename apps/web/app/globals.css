@@ -113,6 +113,7 @@
     background:
       linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
       linear-gradient(135deg, hsl(var(--brand-from)), hsl(var(--brand-to))) border-box;
+    color: hsl(var(--foreground));
   }
 
   .hover-lift {
@@ -151,6 +152,120 @@
     mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 20%, transparent 75%);
   }
 
+  .hero-grid-drift {
+    animation: hero-grid-drift 22s linear infinite;
+  }
+
+  .hero-aurora {
+    mix-blend-mode: soft-light;
+    opacity: 0.55;
+    filter: blur(48px);
+  }
+
+  .hero-aurora-a {
+    background: radial-gradient(ellipse 55% 45% at 15% 20%, hsl(var(--primary) / 0.55), transparent 65%);
+    animation: hero-aurora-a 16s ease-in-out infinite alternate;
+  }
+
+  .hero-aurora-b {
+    background: radial-gradient(ellipse 50% 40% at 85% 30%, hsl(var(--accent) / 0.45), transparent 60%);
+    animation: hero-aurora-b 19s ease-in-out infinite alternate;
+  }
+
+  .hero-aurora-c {
+    background: radial-gradient(ellipse 45% 35% at 50% 85%, hsl(var(--brand-via) / 0.4), transparent 55%);
+    animation: hero-aurora-c 14s ease-in-out infinite alternate;
+  }
+
+  .hero-beam::before {
+    content: "";
+    position: absolute;
+    top: -20%;
+    left: -40%;
+    width: 45%;
+    height: 140%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--primary) / 0.12) 45%,
+      hsl(0 0% 100% / 0.18) 50%,
+      hsl(var(--accent) / 0.12) 55%,
+      transparent
+    );
+    transform: rotate(12deg);
+    animation: hero-beam-sweep 9s ease-in-out infinite;
+  }
+
+  .hero-float-mark {
+    position: absolute;
+    opacity: 0.14;
+    transform: scale(var(--scale, 0.5));
+    animation: hero-float-mark 18s ease-in-out infinite;
+    animation-delay: var(--delay, 0s);
+    filter: blur(0.3px);
+  }
+
+  .hero-particle-lg {
+    width: 6px;
+    height: 6px;
+    background: hsl(var(--accent) / 0.5);
+  }
+
+  .hero-particle-sm {
+    width: 2px;
+    height: 2px;
+    opacity: 0.25;
+  }
+
+  .text-shimmer {
+    background-size: 220% auto;
+    animation: text-shimmer-flow 5s ease-in-out infinite;
+  }
+
+  .text-gradient-shimmer {
+    color: hsl(var(--primary));
+    @apply bg-clip-text;
+    background-image: linear-gradient(
+      90deg,
+      hsl(var(--brand-from)) 0%,
+      hsl(var(--brand-via)) 25%,
+      hsl(var(--brand-to)) 50%,
+      hsl(var(--brand-via)) 75%,
+      hsl(var(--brand-from)) 100%
+    );
+    background-size: 220% auto;
+    animation: text-shimmer-flow 5s ease-in-out infinite;
+  }
+
+  @supports (-webkit-background-clip: text) or (background-clip: text) {
+    .text-gradient-shimmer {
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+    }
+  }
+
+  .brand-mark-arc {
+    stroke-dasharray: 48;
+    animation: brand-mark-draw 3.2s ease-in-out infinite;
+  }
+
+  .brand-mark-arc-1 {
+    animation-delay: 0s;
+  }
+
+  .brand-mark-arc-2 {
+    animation-delay: 0.35s;
+  }
+
+  .brand-mark-arc-3 {
+    animation-delay: 0.7s;
+  }
+
+  .brand-mark-node {
+    animation: brand-mark-pulse 2.4s ease-in-out infinite;
+    transform-origin: 38px 14px;
+  }
+
   .hero-section {
     background: linear-gradient(180deg, hsl(var(--primary) / 0.04) 0%, hsl(var(--background)) 55%);
   }
@@ -176,9 +291,9 @@
     border-radius: 9999px;
     background: hsl(var(--primary) / 0.45);
     animation: hero-particle-float 8s ease-in-out infinite;
-    animation-delay: calc(var(--i) * 0.65s);
-    top: calc(10% + (var(--i) * 7%) % 80%);
-    left: calc(5% + (var(--i) * 8%) % 90%);
+    animation-delay: calc(var(--i) * 0.45s);
+    top: var(--y, calc(10% + (var(--i) * 7%) % 80%));
+    left: var(--x, calc(5% + (var(--i) * 8%) % 90%));
   }
 
   .mockup-ring::before {
@@ -223,6 +338,116 @@
     );
     transform: translateX(-120%);
     animation: btn-shimmer-sweep 3.5s ease-in-out infinite;
+  }
+
+  @keyframes hero-grid-drift {
+    0% {
+      background-position: 0 0;
+    }
+    100% {
+      background-position: 48px 48px;
+    }
+  }
+
+  @keyframes hero-aurora-a {
+    0% {
+      transform: translate(0, 0) scale(1);
+    }
+    100% {
+      transform: translate(6%, 4%) scale(1.12);
+    }
+  }
+
+  @keyframes hero-aurora-b {
+    0% {
+      transform: translate(0, 0) scale(1);
+    }
+    100% {
+      transform: translate(-8%, 6%) scale(1.08);
+    }
+  }
+
+  @keyframes hero-aurora-c {
+    0% {
+      transform: translate(0, 0) scale(1);
+    }
+    100% {
+      transform: translate(4%, -5%) scale(1.15);
+    }
+  }
+
+  @keyframes hero-beam-sweep {
+    0%,
+    100% {
+      transform: translateX(-120%) rotate(12deg);
+      opacity: 0;
+    }
+    15% {
+      opacity: 1;
+    }
+    55% {
+      transform: translateX(280%) rotate(12deg);
+      opacity: 0.85;
+    }
+    70% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes hero-float-mark {
+    0%,
+    100% {
+      transform: scale(var(--scale, 0.5)) translate(0, 0) rotate(0deg);
+      opacity: 0.1;
+    }
+    50% {
+      transform: scale(calc(var(--scale, 0.5) * 1.15)) translate(12px, -18px) rotate(6deg);
+      opacity: 0.2;
+    }
+  }
+
+  @keyframes text-shimmer-flow {
+    0%,
+    100% {
+      background-position: 0% center;
+    }
+    50% {
+      background-position: 100% center;
+    }
+  }
+
+  @keyframes brand-mark-draw {
+    0%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+    50% {
+      stroke-dashoffset: 12;
+      opacity: 0.75;
+    }
+  }
+
+  @keyframes brand-mark-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(0.88);
+      opacity: 0.72;
+    }
+  }
+
+  @keyframes hero-float-d {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+    }
+    50% {
+      transform: translate(-14px, -20px) scale(1.06);
+    }
   }
 
   @keyframes hero-mesh-shift {
@@ -300,6 +525,10 @@
 
   .hero-orb-b {
     animation: hero-float-b 11s ease-in-out infinite;
+  }
+
+  .hero-orb-d {
+    animation: hero-float-d 15s ease-in-out infinite;
   }
 
   .section-glow {
@@ -478,7 +707,18 @@
     .hero-orb-a,
     .hero-orb-b,
     .hero-orb-c,
+    .hero-orb-d,
     .hero-mesh-animate,
+    .hero-grid-drift,
+    .hero-aurora-a,
+    .hero-aurora-b,
+    .hero-aurora-c,
+    .hero-beam::before,
+    .hero-float-mark,
+    .text-shimmer,
+    .text-gradient-shimmer,
+    .brand-mark-arc,
+    .brand-mark-node,
     .mockup-ring::before,
     .btn-shimmer::after,
     .hero-particle,

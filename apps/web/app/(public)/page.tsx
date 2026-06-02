@@ -11,7 +11,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { brand, brandTitle } from "@/lib/brand";
-import { ScrollReveal } from "@/components/marketing/scroll-reveal";
+import { ScrollReveal, StaggerChildren, StaggerItem } from "@/components/marketing/scroll-reveal";
 import { LandingHero } from "@/features/marketing/landing-hero";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -164,17 +164,19 @@ export default function HomePage() {
           <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">مميزات مصممة لرفع التحويل</h2>
           <p className="mt-3 text-muted-foreground">كل ما تحتاجه العيادة الحديثة — في منصة واحدة متناسقة.</p>
         </div>
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <StaggerChildren className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {features.map((item) => (
-            <Card key={item.title} className="glass-card group p-6 hover-lift">
-              <div className="mb-4 inline-flex rounded-xl bg-primary/10 p-3 text-primary transition group-hover:scale-105 group-hover:bg-primary/15">
+            <StaggerItem key={item.title}>
+            <Card className="glass-card group h-full p-6 hover-lift">
+              <div className="mb-4 inline-flex rounded-xl bg-primary/10 p-3 text-primary transition group-hover:scale-110 group-hover:bg-primary/15 group-hover:rotate-3">
                 <item.icon className="h-6 w-6" />
               </div>
               <h3 className="text-lg font-semibold">{item.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.desc}</p>
             </Card>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerChildren>
         </section>
       </ScrollReveal>
 
