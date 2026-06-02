@@ -12,7 +12,6 @@ import { Textarea } from "@/components/ui/textarea";
 const schema = z.object({
   name: z.string().min(2, "الاسم مطلوب"),
   email: z.string().email("بريد غير صحيح"),
-  phone: z.string().min(8, "رقم غير صحيح"),
   message: z.string().min(10, "اكتب تفاصيل أكثر"),
 });
 
@@ -20,7 +19,7 @@ type Values = z.infer<typeof schema>;
 
 export function ContactForm() {
   const [loading, setLoading] = useState(false);
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: "", email: "", phone: "", message: "" } });
+  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: "", email: "", message: "" } });
 
   const onSubmit = form.handleSubmit(async (values) => {
     setLoading(true);
@@ -30,11 +29,19 @@ export function ContactForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
-      if (!res.ok) throw new Error("failed");
-      toast.success("تم إرسال طلب التواصل بنجاح");
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !json?.ok) {
+        if (json?.error === "mail_not_configured") {
+          toast.error("خدمة البريد غير مهيّأة بعد — تواصل مباشرة عبر info@tenegta.com");
+        } else {
+          toast.error("تعذر الإرسال حالياً، حاول لاحقاً");
+        }
+        return;
+      }
+      toast.success("تم إرسال رسالتك — سنتواصل معك قريباً");
       form.reset();
     } catch {
-      toast.error("تعذر الإرسال حاليا، حاول لاحقا");
+      toast.error("تعذر الإرسال حالياً، حاول لاحقاً");
     } finally {
       setLoading(false);
     }
@@ -42,12 +49,11 @@ export function ContactForm() {
 
   return (
     <form className="flex flex-col gap-cg-3" onSubmit={onSubmit}>
-      <Input placeholder="الاسم" {...form.register("name")} />
-      <Input placeholder="البريد الإلكتروني" {...form.register("email")} />
-      <Input placeholder="رقم الجوال" {...form.register("phone")} />
-      <Textarea placeholder="كيف نقدر نساعدك؟" {...form.register("message")} />
-      <Button disabled={loading} className="w-full">
-        {loading ? "جار الإرسال..." : "إرسال"}
+      <Input placeholder="الاسم" autoComplete="name" {...form.register("name")} />
+      <Input placeholder="البريد الإلكتروني" type="email" autoComplete="email" {...form.register("email")} />
+      <Textarea placeholder="كيف نقدر نساعدك؟" rows={5} {...form.register("message")} />
+      <Button disabled={loading} className="w-full" variant="brand">
+        {loading ? "جار الإرسال..." : "إرسال الرسالة"}
       </Button>
     </form>
   );

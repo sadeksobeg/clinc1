@@ -134,10 +134,16 @@ export function PublicShell({
           </div>
           <div className="space-y-2 text-sm">
             <p className="font-medium">تواصل</p>
-            <p className="text-muted-foreground">واتساب: {brand.phoneDisplay}</p>
-            <p className="text-muted-foreground">البريد: {brand.email}</p>
             <p className="text-muted-foreground">
-              © {new Date().getFullYear()} {brand.nameAr} ({brand.nameEn})
+              <a href={`mailto:${brand.email}`} className="hover:text-primary">
+                {brand.email}
+              </a>
+            </p>
+            <p className="text-muted-foreground">
+              © {new Date().getFullYear()} {brand.nameAr} ({brand.nameEn}) ·{" "}
+              <a href={brand.companyUrl} className="hover:text-primary" target="_blank" rel="noopener noreferrer">
+                {brand.companyName}
+              </a>
             </p>
           </div>
         </div>

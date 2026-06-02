@@ -8,8 +8,9 @@ export const brand = {
   taglineEn: "Clinic operations platform — WhatsApp, scheduling, and care in one flow",
   description:
     "نسق (Nasaq) — منصة احترافية لتشغيل العيادات عبر واتساب الذكي، إدارة المواعيد، وصندوق المحادثات مع فريقك.",
-  email: "hello@tenegta.tech",
-  phoneDisplay: "+963 939 448 113",
+  email: "info@tenegta.com",
+  companyName: "Tenegta",
+  companyUrl: "https://tenegta.com",
   siteUrl: "https://tenegta.tech",
   colors: {
     primary: "#0D9488",

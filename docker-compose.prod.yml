@@ -124,6 +124,14 @@ services:
       # استدعاء /api/auth/me من الـ middleware دون الخروج إلى Cloudflare (hairpin)
       INTERNAL_WEB_ORIGIN: ${CLINIC_WEB_INTERNAL_ORIGIN:-http://127.0.0.1:3000}
       SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:?set SCHEDULING_SERVICE_TOKEN}
+      CONTACT_TO_EMAIL: ${CONTACT_TO_EMAIL:-info@tenegta.com}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      CONTACT_EMAIL_WEBHOOK_URL: ${CONTACT_EMAIL_WEBHOOK_URL:-}
 
   event-consumer:
     build:
