@@ -65,6 +65,21 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod build ops-dashboa
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d ops-dashboard clinic-web
 echo "[docker] ops-dashboard + clinic-web updated"
 
+echo "[docker] waiting for clinic-web on :3000 (avoids nginx 502 during rebuild)..."
+WEB_OK=0
+for i in $(seq 1 90); do
+  if curl -sf -m 3 -o /dev/null http://127.0.0.1:3000/login 2>/dev/null; then
+    WEB_OK=1
+    echo "[docker] clinic-web healthy after ${i} attempt(s)"
+    break
+  fi
+  sleep 2
+done
+if [[ "$WEB_OK" -ne 1 ]]; then
+  echo "[docker] ERROR: clinic-web did not respond on :3000 — check: docker compose -f docker-compose.prod.yml --env-file .env.prod logs clinic-web --tail 80"
+  exit 1
+fi
+
 # 6) السماح لشبكة compose بالاتصال بالجسر على المضيف (UFW)
 bash "$REPO_ROOT/scripts/ufw-allow-bridge-from-docker.sh" || \
   echo "[ufw] WARN: ufw-allow-bridge-from-docker.sh failed — bridge deep health may time out."
