@@ -29,7 +29,13 @@ export async function GET(req: Request) {
     const summary = await pool.query(
       `SELECT action,
               COUNT(*)::int AS total,
-              COUNT(*) FILTER (WHERE COALESCE((payload->>'ok')::boolean, TRUE) = FALSE)::int AS error_count,
+              COUNT(*) FILTER (
+                WHERE payload ? 'ok'
+                  AND (
+                    payload->>'ok' = 'false'
+                    OR lower(payload->>'ok') IN ('f', '0', 'no')
+                  )
+              )::int AS error_count,
               ROUND(AVG((payload->>'duration_ms')::numeric), 2) AS avg_ms,
               ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY (payload->>'duration_ms')::numeric), 2) AS p50_ms,
               ROUND(percentile_cont(0.95) WITHIN GROUP (ORDER BY (payload->>'duration_ms')::numeric), 2) AS p95_ms

@@ -311,14 +311,18 @@ function createWaSessionManager(config, ctx) {
         continue;
       }
       try {
-        const hdr = { "Content-Type": "application/json" };
-        if (config.webhookHmacSecret) {
-          hdr["X-Bridge-Signature"] = `sha256=${signPayload(config.webhookHmacSecret, j.raw)}`;
+        const target = inboundPostTarget();
+        const retryHdr = { "Content-Type": "application/json" };
+        if (target.mode === "ops" && config.schedulingServiceToken) {
+          retryHdr.Authorization = `Bearer ${config.schedulingServiceToken}`;
+        } else if (config.webhookHmacSecret) {
+          retryHdr["X-Bridge-Signature"] = `sha256=${signPayload(config.webhookHmacSecret, j.raw)}`;
         }
-        const res = await axios.post(config.webhookUrl, j.raw, {
-          headers: hdr,
+        const res = await axios.post(target.url, j.raw, {
+          headers: retryHdr,
           maxBodyLength: Infinity,
           maxContentLength: Infinity,
+          validateStatus: (s) => s >= 200 && s < 300,
         });
         const data = res.data;
         if (data && typeof data === "object" && data.ok === false && String(data.error || "").toLowerCase().includes("hmac")) {
@@ -391,29 +395,16 @@ function createWaSessionManager(config, ctx) {
     startClient();
   }
 
-  async function postInboundWebhook(raw, headers, from) {
-    const res = await axios.post(config.webhookUrl, raw, {
-      headers,
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-    });
-    const data = res.data;
-    if (data && typeof data === "object" && data.ok === false && String(data.error || "").toLowerCase().includes("hmac")) {
-      const err = new Error("webhook_hmac_rejected");
-      err.response = res;
-      throw err;
+  function inboundPostTarget() {
+    if (config.inboundForwardMode === "ops") {
+      return { url: config.processInboundUrl, mode: "ops" };
     }
-    metrics.inc("webhook_forward_total");
-    logEvent("webhook_forwarded", { from, webhookUrl: config.webhookUrl });
+    return { url: config.webhookUrl, mode: "n8n" };
   }
 
-  async function forwardToN8n(msg, text) {
+  function buildInboundBody(msg, text) {
     const clinicIdNum =
-      Number.parseInt(String(config.clinicId).replace(/[^0-9]/g, ""), 10) ||
-      1;
-    // to_number: the WhatsApp number this bridge instance is paired to. ops-dashboard
-    // uses it to resolve `whatsapp_inbound_routes` → hub_clinic_id / allowed_clinic_ids
-    // so the same bridge can serve multiple clinics.
+      Number.parseInt(String(config.clinicId).replace(/[^0-9]/g, ""), 10) || 1;
     let toNumber = "";
     try {
       const me = state.waClient?.info?.wid?._serialized || "";
@@ -424,7 +415,7 @@ function createWaSessionManager(config, ctx) {
     } catch {
       toNumber = "";
     }
-    const bodyObj = {
+    return {
       clinic_id: clinicIdNum,
       sender: msg.from,
       from: msg.from,
@@ -434,19 +425,59 @@ function createWaSessionManager(config, ctx) {
       timestamp: msg.timestamp,
       receivedAt: new Date().toISOString(),
     };
-    const raw = JSON.stringify(bodyObj);
+  }
+
+  function inboundRequestHeaders(raw) {
     const headers = { "Content-Type": "application/json" };
+    if (config.inboundForwardMode === "ops") {
+      const token = config.schedulingServiceToken;
+      if (token) headers.Authorization = `Bearer ${token}`;
+      return headers;
+    }
     if (config.webhookHmacSecret) {
       headers["X-Bridge-Signature"] = `sha256=${signPayload(config.webhookHmacSecret, raw)}`;
     }
+    return headers;
+  }
+
+  async function postInboundWebhook(raw, headers, from) {
+    const target = inboundPostTarget();
+    const res = await axios.post(target.url, raw, {
+      headers,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      validateStatus: (s) => s >= 200 && s < 300,
+    });
+    const data = res.data;
+    if (data && typeof data === "object" && data.ok === false && String(data.error || "").toLowerCase().includes("hmac")) {
+      const err = new Error("webhook_hmac_rejected");
+      err.response = res;
+      throw err;
+    }
+    metrics.inc("webhook_forward_total");
+    logEvent("webhook_forwarded", { from, inboundForwardMode: target.mode, url: target.url });
+  }
+
+  async function forwardInbound(msg, text) {
+    if (config.inboundForwardMode === "ops" && !config.schedulingServiceToken) {
+      metrics.inc("webhook_forward_fail_total");
+      console.error("[bridge] inbound forward to ops skipped: SCHEDULING_SERVICE_TOKEN is not set");
+      logEvent("inbound_forward_skipped", { reason: "missing_scheduling_service_token", from: msg.from });
+      return;
+    }
+    const bodyObj = buildInboundBody(msg, text);
+    const raw = JSON.stringify(bodyObj);
+    const headers = inboundRequestHeaders(raw);
+    const target = inboundPostTarget();
     try {
       await postInboundWebhook(raw, headers, msg.from);
     } catch (error) {
       metrics.inc("webhook_forward_fail_total");
-      console.error("[bridge] webhook forward failed:", error?.message || error);
+      console.error("[bridge] inbound forward failed:", error?.message || error);
       logEvent("webhook_forward_failed", {
         from: msg.from,
-        webhookUrl: config.webhookUrl,
+        inboundForwardMode: target.mode,
+        url: target.url,
         error: error?.message || String(error),
       });
       if (String(error?.message || "").includes("hmac_rejected")) {
@@ -454,7 +485,7 @@ function createWaSessionManager(config, ctx) {
       }
       inboundWebhookQueue.enqueue({ raw, from: msg.from });
       metrics.inc("inbound_webhook_queued_total");
-      logEvent("webhook_forward_queued", { from: msg.from, webhookUrl: config.webhookUrl });
+      logEvent("webhook_forward_queued", { from: msg.from, inboundForwardMode: target.mode, url: target.url });
     }
   }
 
@@ -817,7 +848,7 @@ function createWaSessionManager(config, ctx) {
         }
       }
 
-      await forwardToN8n(msg, text);
+      await forwardInbound(msg, text);
     });
   }
 

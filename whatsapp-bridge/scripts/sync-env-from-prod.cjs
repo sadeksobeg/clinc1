@@ -60,11 +60,19 @@ function main() {
     prod.N8N_PUBLIC_WEBHOOK_URL || "http://127.0.0.1:5678/",
   );
 
+  const crmDbName = prod.POSTGRES_DB === "clinic_ops" ? "clinic_ops" : prod.CRM_DB_NAME || "clinic_ops";
+
   const overrides = {
+    OPS_WHATSAPP_PRIMARY_HANDLER: "ops",
     N8N_WEBHOOK_URL: n8nWebhook,
     N8N_WEBHOOK_HMAC_SECRET: prod.N8N_WEBHOOK_HMAC_SECRET || "",
     OPS_DASHBOARD_URL: `http://127.0.0.1:${opsPort}`,
     SCHEDULING_SERVICE_TOKEN: prod.SCHEDULING_SERVICE_TOKEN || "",
+    CRM_DB_NAME: crmDbName,
+    CRM_DB_HOST: prod.CRM_DB_HOST || "127.0.0.1",
+    CRM_DB_PORT: prod.CRM_DB_PORT || prod.POSTGRES_PUBLISH_PORT || "5432",
+    CRM_DB_USER: prod.POSTGRES_USER || "postgres",
+    CRM_DB_PASSWORD: prod.POSTGRES_PASSWORD || "",
     BRIDGE_SEND_API_TOKEN:
       prod.BRIDGE_SEND_API_TOKEN || prod.BRIDGE_SEND_TOKEN || "",
   };

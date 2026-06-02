@@ -4,11 +4,11 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "whatsapp",
+        "path": "whatsapp-inbound",
         "responseMode": "lastNode"
       },
       "id": "WebhookNode",
-      "name": "Webhook Inbound",
+      "name": "WebhookInbound",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
@@ -732,7 +732,7 @@
     }
   ],
   "connections": {
-    "Webhook Inbound": {
+    "WebhookInbound": {
       "main": [
         [
           {

@@ -10,14 +10,27 @@ function num(v, defaultValue) {
   return Number.isFinite(n) ? n : defaultValue;
 }
 
+/** `ops` = POST process-inbound on ops-dashboard; `n8n` = POST N8N_WEBHOOK_URL */
+function resolveInboundForwardMode() {
+  const explicit = String(process.env.BRIDGE_INBOUND_FORWARD || "").trim().toLowerCase();
+  if (explicit === "ops" || explicit === "n8n") return explicit;
+  const primary = String(process.env.OPS_WHATSAPP_PRIMARY_HANDLER || "").trim().toLowerCase();
+  if (primary === "ops") return "ops";
+  return "n8n";
+}
+
 function loadConfig() {
+  const opsDashboardUrl = (process.env.OPS_DASHBOARD_URL || "http://127.0.0.1:3001").trim().replace(/\/$/, "");
+  const inboundForwardMode = resolveInboundForwardMode();
   return {
+    inboundForwardMode,
+    processInboundUrl: `${opsDashboardUrl}/api/internal/conversations/process-inbound`,
     webhookUrl: process.env.N8N_WEBHOOK_URL || "http://localhost:5678/webhook/whatsapp",
     bridgePort: num(process.env.BRIDGE_PORT, 3100),
     /** Listen address. Use 0.0.0.0 on the VPS so ops-dashboard (Docker) can reach the bridge via host.docker.internal. 127.0.0.1 breaks container health checks. */
     bridgeBindHost: String(process.env.BRIDGE_BIND_HOST || "0.0.0.0").trim() || "0.0.0.0",
     clinicId: String(process.env.CLINIC_ID || "1").trim(),
-    opsDashboardUrl: (process.env.OPS_DASHBOARD_URL || "http://127.0.0.1:3001").trim(),
+    opsDashboardUrl,
     schedulingServiceToken: (process.env.SCHEDULING_SERVICE_TOKEN || "").trim(),
     /** If true, bridge shows clinic menus; otherwise ops-dashboard is the single source of replies. */
     waRoutingMenus: bool(process.env.WA_ROUTING_MENUS, false),

@@ -39,7 +39,7 @@ export async function GET(req: Request) {
 
   const [health, deepHealth, perms] = await Promise.all([
     safeOpsCheck(req, "/api/internal/system/health"),
-    safeOpsCheck(req, "/api/internal/system/health/deep"),
+    safeOpsCheck(req, "/api/system/health/deep"),
     safeOpsCheck(req, "/api/internal/platform/me/permissions"),
   ]);
 

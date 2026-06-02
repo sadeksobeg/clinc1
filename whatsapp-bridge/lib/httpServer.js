@@ -234,6 +234,9 @@ function createHttpServer(config, deps) {
     logEvent("bridge_started", {
       bridgePort: config.bridgePort,
       bridgeBindHost: host,
+      inboundForwardMode: config.inboundForwardMode,
+      inboundForwardUrl:
+        config.inboundForwardMode === "ops" ? config.processInboundUrl : config.webhookUrl,
       webhookUrl: config.webhookUrl,
       clinicId: config.clinicId,
       replyWindowHours: config.replyWindowHours,
