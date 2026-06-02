@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LifeBuoy, LogOut, RefreshCw } from "lucide-react";
+import { Logo } from "@/components/brand/Logo";
+import { brand } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -31,12 +33,10 @@ export function SupportChrome({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen">
         <aside className="hidden w-72 border-e border-border/70 bg-card/80 px-cg-4 py-cg-5 backdrop-blur-xl lg:flex lg:flex-col">
           <Link href="/support-agent" className="mb-cg-5 flex items-center gap-cg-3 rounded-2xl px-cg-3 py-cg-2 hover:bg-muted/70">
-            <div className="grid h-10 w-10 place-content-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
-              <LifeBuoy className="h-5 w-5" />
-            </div>
+            <Logo variant="mark" size="sm" />
             <div>
-              <p className="text-ds-body text-muted-foreground">تطبيق الدعم</p>
-              <p className="text-ds-h3 font-semibold">Support Agent Console</p>
+              <p className="text-ds-body text-muted-foreground">دعم {brand.nameAr}</p>
+              <p className="text-ds-h3 font-semibold">وحدة الدعم</p>
             </div>
           </Link>
 

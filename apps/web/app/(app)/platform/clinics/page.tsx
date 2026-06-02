@@ -12,6 +12,7 @@ import type { ApiResponse } from "@/lib/api-response";
 import { hasPerm } from "@/lib/platform-perms";
 import { Input } from "@/components/ui/input";
 import { useQuery } from "@tanstack/react-query";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
@@ -143,10 +144,7 @@ export default function PlatformClinicsPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header>
-        <p className="text-ds-body text-muted-foreground">المنصة</p>
-        <h1 className="text-ds-h1 font-semibold tracking-tight">العيادات</h1>
-      </header>
+      <PlatformPageHeader title="العيادات" />
       {status === "loading" ? <TableSkeleton rows={8} /> : null}
       {status === "error" ? <ErrorState title="تعذر تحميل العيادات" description={errMsg} onRetry={() => void clinicsQ.refetch()} /> : null}
       {status === "success" ? (

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { brandTitle } from "@/lib/brand";
 import { TrialSignupWizard } from "@/features/public/forms/trial-signup-wizard";
 
 export const metadata: Metadata = {
-  title: "تجربة مجانية 3 أيام | كلينك ساس",
+  title: brandTitle("تجربة مجانية 3 أيام"),
   description: "أنشئ تجربة مجانية لعيادتك خلال دقائق بدون بطاقة دفع.",
 };
 

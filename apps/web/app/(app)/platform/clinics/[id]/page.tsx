@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -343,28 +344,30 @@ export default function PlatformClinicControlPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة ← العيادات</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">
+      <PlatformPageHeader
+        context="نسق — العيادات"
+        title={
+          <>
             {clinicName} <span className="text-ds-body text-muted-foreground">#{clinicId}</span>
-          </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-cg-2">
-          <Badge variant="secondary">
-            {isRecord(billingSnapshot) && billingSnapshot.status != null ? String(billingSnapshot.status) : "الحالة: غير متوفر"}
-          </Badge>
-          <Button variant="outline" disabled={action.busy} onClick={() => void actAsClinic()}>
-            دخول سياق العيادة
-          </Button>
-          <Button variant="outline" disabled={action.busy || !canLifecycleWrite} onClick={() => void lifecycle("activate")}>
-            تفعيل
-          </Button>
-          <Button variant="outline" disabled={action.busy || !canLifecycleWrite} onClick={() => void lifecycle("suspend")}>
-            تعليق
-          </Button>
-        </div>
-      </header>
+          </>
+        }
+        right={
+          <>
+            <Badge variant="secondary">
+              {isRecord(billingSnapshot) && billingSnapshot.status != null ? String(billingSnapshot.status) : "الحالة: غير متوفر"}
+            </Badge>
+            <Button variant="outline" disabled={action.busy} onClick={() => void actAsClinic()}>
+              دخول سياق العيادة
+            </Button>
+            <Button variant="outline" disabled={action.busy || !canLifecycleWrite} onClick={() => void lifecycle("activate")}>
+              تفعيل
+            </Button>
+            <Button variant="outline" disabled={action.busy || !canLifecycleWrite} onClick={() => void lifecycle("suspend")}>
+              تعليق
+            </Button>
+          </>
+        }
+      />
 
       {status === "loading" ? <TableSkeleton rows={8} /> : null}
       {status === "error" ? <ErrorState title="تعذر تحميل العيادة" description={errMsg} onRetry={() => void summaryQ.refetch()} /> : null}

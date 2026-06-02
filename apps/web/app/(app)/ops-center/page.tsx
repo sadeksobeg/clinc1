@@ -1,5 +1,6 @@
 "use client";
 
+import { PageHeader } from "@/components/layout/PageHeader";
 import { useEffect, useState } from "react";
 
 type Health = {
@@ -147,10 +148,7 @@ export default function OpsCenterPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header>
-        <p className="text-ds-body text-muted-foreground">مركز التحكم التشغيلي</p>
-        <h1 className="text-ds-h1 font-semibold tracking-tight">مركز العمليات</h1>
-      </header>
+      <PageHeader subtitle="نسق — تشغيل" title="مركز العمليات" description="مركز التحكم التشغيلي" />
       <div className="grid gap-cg-4 md:grid-cols-3">
         {me.role === "super_admin" && me.scope === "platform" ? (
           <section className="rounded-xl border border-primary/30 bg-primary/5 p-cg-4 md:col-span-3">

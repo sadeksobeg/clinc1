@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ErrorState } from "@/components/platform/AsyncState";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { TableSkeleton, TableToolbar } from "@/components/platform/TableSkeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -40,13 +41,10 @@ export default function PlatformSupportPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">الدعم (عام)</h1>
-        </div>
-        <p className="text-ds-small text-muted-foreground">التذاكر: {tickets.length}</p>
-      </header>
+      <PlatformPageHeader
+        title="الدعم (عام)"
+        right={<p className="text-ds-small text-muted-foreground">التذاكر: {tickets.length}</p>}
+      />
 
       {status === "loading" ? <TableSkeleton rows={10} /> : null}
       {status === "error" ? <ErrorState title="تعذر تحميل الدعم" description={errMsg} onRetry={() => void load()} /> : null}

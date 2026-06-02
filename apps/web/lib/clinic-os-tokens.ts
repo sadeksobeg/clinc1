@@ -1,6 +1,6 @@
 /**
- * Clinic OS — design tokens (code contract).
- * Tailwind mirrors these values in tailwind.config.ts; keep both in sync when changing.
+ * Clinic OS — design tokens (code contract). Nasaq brand palette.
+ * Tailwind mirrors these in tailwind.config.ts; keep both in sync when changing.
  */
 
 export const clinicOsSpacingPx = {
@@ -15,7 +15,6 @@ export const clinicOsSpacingPx = {
   8: 64,
 } as const;
 
-/** Tailwind: cg-0 … cg-8 */
 export const clinicOsSpacingTw = {
   stackTight: "gap-cg-2",
   stackDefault: "gap-cg-4",
@@ -30,7 +29,6 @@ export const clinicOsMotion = {
   ease: "cubic-bezier(0.4, 0, 0.2, 1)",
 } as const;
 
-/** Tailwind: duration-ds-fast | ease-ds-out */
 export const clinicOsMotionTw = {
   transition: "transition-all duration-ds-normal ease-ds-out",
   transitionFast: "transition-all duration-ds-fast ease-ds-out",
@@ -47,7 +45,6 @@ export const clinicOsShadowCss = {
   md: "0 4px 12px rgba(0,0,0,0.3)",
 } as const;
 
-/** Typography scale (px). Tailwind: text-ds-h1 … text-ds-label */
 export const clinicOsType = {
   h1: { size: 28, weight: 600, lineHeight: 1.2 },
   h2: { size: 22, weight: 600, lineHeight: 1.2 },
@@ -57,18 +54,19 @@ export const clinicOsType = {
   label: { size: 11, weight: 500, lineHeight: 1.4 },
 } as const;
 
-/** Hex reference for docs / exports — UI uses HSL CSS variables */
+/** Nasaq brand palette reference */
 export const clinicOsPaletteReference = {
-  bg: "#0B1220",
-  surface: "#111827",
-  surfaceElevated: "#1F2937",
-  textPrimary: "#F9FAFB",
-  textSecondary: "#9CA3AF",
-  primary: "#2563EB",
-  primaryHover: "#1D4ED8",
+  bg: "#F8FAFC",
+  surface: "#FFFFFF",
+  surfaceElevated: "#F1F5F9",
+  textPrimary: "#0F172A",
+  textSecondary: "#64748B",
+  primary: "#0D9488",
+  primaryHover: "#0F766E",
+  accent: "#2563EB",
   success: "#16A34A",
   warning: "#F59E0B",
   error: "#DC2626",
-  info: "#38BDF8",
-  border: "#1F2937",
+  info: "#0EA5E9",
+  border: "#E2E8F0",
 } as const;

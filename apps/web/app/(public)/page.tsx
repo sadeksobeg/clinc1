@@ -1,14 +1,14 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { BarChart3, CalendarCheck2, MessageCircleMore, ShieldCheck, Sparkles, UsersRound } from "lucide-react";
+import { brand, brandTitle } from "@/lib/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 export const metadata: Metadata = {
-  title: "كلينك ساس | موظف استقبال ذكي لعيادتك",
-  description:
-    "رد تلقائي، تنظيم حجوزات، متابعة المرضى، تقليل الضغط على السكرتيرة، وزيادة الحجوزات عبر واتساب.",
+  title: brandTitle("موظف استقبال ذكي لعيادتك"),
+  description: brand.taglineAr,
 };
 
 const features = [
@@ -36,18 +36,18 @@ export default function HomePage() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,hsl(var(--primary)/0.2),transparent_40%),radial-gradient(circle_at_80%_0%,hsl(var(--secondary)/0.18),transparent_35%)]" />
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:items-center">
           <div className="space-y-6">
-            <Badge variant="secondary" className="w-fit">
-              منصة تشغيل عيادات بمعايير عالمية
+            <Badge variant="secondary" className="w-fit border-gradient">
+              {brand.nameAr} — منصة تشغيل عيادات بمعايير عالمية
             </Badge>
             <h1 className="text-4xl font-extrabold leading-tight sm:text-5xl lg:text-6xl">
-              موظف استقبال ذكي لعيادتك يعمل 24/7 عبر واتساب
+              <span className="text-gradient">موظف استقبال ذكي</span> لعيادتك — 24/7 عبر واتساب
             </h1>
             <p className="max-w-2xl text-lg text-muted-foreground">
               رد تلقائي، تنظيم حجوزات، متابعة المرضى، تقليل الضغط على السكرتيرة، وزيادة الحجوزات.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Button asChild size="lg">
-                <Link href="/trial">ابدأ 3 أيام مجانا</Link>
+              <Button asChild size="lg" variant="brand">
+                <Link href="/trial">ابدأ 3 أيام مجاناً</Link>
               </Button>
               <Button asChild variant="outline" size="lg">
                 <Link href="/demo">شاهد العرض</Link>
@@ -180,7 +180,7 @@ export default function HomePage() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
-              name: "كلينك ساس",
+              name: brand.nameAr,
               applicationCategory: "تطبيق أعمال",
               operatingSystem: "ويب",
             offers: { "@type": "Offer", price: "120", priceCurrency: "USD" },

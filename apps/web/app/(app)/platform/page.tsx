@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -190,19 +191,19 @@ export default function PlatformHomePage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">نظام المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">لوحة القيادة</h1>
-          <p className="mt-cg-1 text-ds-body text-muted-foreground">عرض تشغيلي: الحوادث ← القرارات ← الإجراءات</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-cg-2">
-          <Badge variant="secondary">platform</Badge>
-          <Button size="sm" variant="outline" onClick={() => void Promise.all([revenueQ.refetch(), systemQ.refetch(), incidentsQ.refetch(), decisionsQ.refetch(), actionsQ.refetch()])}>
-            تحديث
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        subtitle="نسق — نظام المنصة"
+        title="لوحة القيادة"
+        description="عرض تشغيلي: الحوادث ← القرارات ← الإجراءات"
+        right={
+          <>
+            <Badge variant="brand">platform</Badge>
+            <Button size="sm" variant="outline" onClick={() => void Promise.all([revenueQ.refetch(), systemQ.refetch(), incidentsQ.refetch(), decisionsQ.refetch(), actionsQ.refetch()])}>
+              تحديث
+            </Button>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-cg-3">

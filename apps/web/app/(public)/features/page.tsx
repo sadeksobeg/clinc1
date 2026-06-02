@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { brandTitle } from "@/lib/brand";
 import { Card } from "@/components/ui/card";
 
 export const metadata: Metadata = {
-  title: "المميزات | كلينك ساس",
+  title: brandTitle("المميزات"),
   description: "استكشف مميزات واتساب الذكي، الحجز متعدد الأطباء، التقارير، الفوترة، الأمان، وصلاحيات الفريق.",
 };
 
@@ -18,14 +19,14 @@ const items = [
 
 export default function FeaturesPage() {
   return (
-    <div className="mx-auto max-w-7xl space-y-8 px-4 py-12 sm:px-6">
-      <h1 className="text-4xl font-bold">المميزات</h1>
+    <div className="mx-auto max-w-7xl space-y-8 px-4 py-12 sm:px-6 animate-fade-in">
+      <h1 className="text-4xl font-bold text-gradient">المميزات</h1>
       <p className="max-w-3xl text-muted-foreground">
         منصة متكاملة مصممة للعيادات الحديثة التي تريد تحويل واتساب إلى قناة تشغيل ونمو فعالة.
       </p>
       <div className="grid gap-4 md:grid-cols-2">
         {items.map(([title, desc]) => (
-          <Card key={title} className="p-6">
+          <Card key={title} className="glass-card p-6 hover-lift">
             <h2 className="text-xl font-semibold">{title}</h2>
             <p className="mt-2 text-muted-foreground">{desc}</p>
           </Card>

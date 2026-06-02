@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ErrorState, EmptyState } from "@/components/platform/AsyncState";
 import { TableSkeleton, TableToolbar } from "@/components/platform/TableSkeleton";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,11 +88,9 @@ export default function PlatformIncidentsPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">الحوادث</h1>
-        </div>
+      <PlatformPageHeader
+        title="الحوادث"
+        right={
         <div className="flex flex-wrap items-center gap-cg-2">
           {canCreate ? (
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -177,7 +176,8 @@ export default function PlatformIncidentsPage() {
           ) : null}
           <Badge variant="secondary">{status === "loading" ? "جارٍ التحميل..." : `العدد=${rows.length}`}</Badge>
         </div>
-      </header>
+        }
+      />
 
       {status === "loading" ? <TableSkeleton rows={10} /> : null}
       {status === "error" ? <ErrorState title="تعذر تحميل الحوادث" description={errMsg} onRetry={() => void load()} /> : null}

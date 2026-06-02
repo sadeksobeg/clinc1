@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { Logo } from "@/components/brand/Logo";
+import { brand } from "@/lib/brand";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,18 +37,12 @@ export default function LoginPage() {
           return;
         }
       }
-      const otp =
-        superAdminMfaStep && devBypassOtp && DEV_SUPERADMIN_OTP
-          ? DEV_SUPERADMIN_OTP
-          : superAdminMfaStep
-            ? otpCode.trim()
-            : "";
       const payload: { email: string; password: string; otp_code?: string } = { email, password };
       if (superAdminMfaStep) {
         if (devBypassOtp && DEV_SUPERADMIN_OTP) {
           payload.otp_code = DEV_SUPERADMIN_OTP;
-        } else if (otp.length === 6) {
-          payload.otp_code = otp;
+        } else if (otpCode.trim().length === 6) {
+          payload.otp_code = otpCode.trim();
         }
       }
       const r = await fetch("/api/auth/login", {
@@ -83,32 +79,20 @@ export default function LoginPage() {
           const seen = j.seen_ip?.trim();
           throw new Error(
             seen
-              ? `عنوان IP الذي يصل به الخادم غير مدرج في قائمة السماح: ${seen}. على السيرفر أضف سطرًا في user_ip_allowlist (مثلاً ${seen}/32) للمستخدم super_admin، أو راجع تمرير ترويسة CF-Connecting-IP في nginx.`
-              : "عنوان IP الحالي غير مسموح به لتسجيل دخول مشرف المنصة. حدّث قائمة السماح في إعدادات الأمان أو اتصل بالمسؤول.",
+              ? `عنوان IP الذي يصل به الخادم غير مدرج في قائمة السماح: ${seen}.`
+              : "عنوان IP الحالي غير مسموح به لتسجيل دخول مشرف المنصة.",
           );
         }
-        if (
-          j.error === "auth_upstream_error" ||
-          (r.status >= 500 && !j.error)
-        ) {
-          throw new Error(
-            "حدث خطأ في خادم المصادقة. راجع سجلات حاوية ops-dashboard على الخادم (docker compose logs ops-dashboard) وتأكد من JWT_SECRET وقاعدة البيانات والترحيلات.",
-          );
+        if (j.error === "auth_upstream_error" || (r.status >= 500 && !j.error)) {
+          throw new Error("حدث خطأ في خادم المصادقة. راجع سجلات ops-dashboard.");
         }
         if (j.error === "mfa_required") {
-          throw new Error(
-            "رمز المصادقة الثنائية غير صحيح أو منتهٍ. استخدم الرمز الحالي من التطبيق، وتأكد أن الوقت تلقائي على الهاتف وأن المفتاح مطابق لما سجّلته في قاعدة البيانات.",
-          );
+          throw new Error("رمز المصادقة الثنائية غير صحيح أو منتهٍ.");
         }
         if (j.error === "missing_session_cookie") {
-          throw new Error(
-            "تعذر إنشاء الجلسة بعد نجاح المصادقة. حدّث صفحة الويب (نسخة apps/web) أو أعد بناء حاوية clinic-web؛ قد يكون استخراج Set-Cookie من الخادم الخلفي غير مكتمل.",
-          );
+          throw new Error("تعذر إنشاء الجلسة بعد نجاح المصادقة. أعد بناء حاوية clinic-web.");
         }
-        if (
-          j.error === "Invalid credentials" ||
-          j.error === "invalid_credentials"
-        ) {
+        if (j.error === "Invalid credentials" || j.error === "invalid_credentials") {
           throw new Error("البريد أو كلمة المرور غير صحيحة.");
         }
         if (j.error === "internal_error" && j.detail) {
@@ -129,78 +113,95 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-primary/10 to-background p-6">
-      <Card className="w-full max-w-md glass-card">
-        <CardHeader>
-          <CardTitle>تسجيل الدخول</CardTitle>
-          <CardDescription>استخدم حساب العيادة الحالي للدخول الآمن إلى مساحة العمل.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <form className="flex flex-col gap-3" onSubmit={onSubmit}>
-            <Input
-              placeholder="البريد الإلكتروني"
-              type="email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setSuperAdminMfaStep(false);
-                setOtpCode("");
-                setDevBypassOtp(false);
-              }}
-              required
-              disabled={superAdminMfaStep}
-            />
-            <Input
-              type="password"
-              placeholder="كلمة المرور"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setSuperAdminMfaStep(false);
-                setOtpCode("");
-                setDevBypassOtp(false);
-              }}
-              required
-            />
-            {superAdminMfaStep ? (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  تم التحقق من كلمة المرور. أدخل رمز OTP لمشرف المنصة (TOTP).
-                </p>
-                <Input
-                  placeholder="رمز OTP (6 أرقام)"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value)}
-                  inputMode="numeric"
-                  maxLength={6}
-                  disabled={devBypassOtp && Boolean(DEV_SUPERADMIN_OTP)}
-                  required={!devBypassOtp || !DEV_SUPERADMIN_OTP}
-                />
-                {DEV_SUPERADMIN_OTP ? (
-                  <label className="flex select-none items-center justify-between rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-sm">
-                    <span className="flex items-center gap-2">
-                      <span>تجاوز OTP (تطوير)</span>
-                      <Badge variant="outline">DEV</Badge>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={devBypassOtp}
-                      onChange={(e) => setDevBypassOtp(e.target.checked)}
-                    />
-                  </label>
-                ) : null}
-              </>
-            ) : null}
-            {err ? <p className="text-sm text-red-500">{err}</p> : null}
-            <Button type="submit" disabled={loading}>
-              {loading ? "..." : superAdminMfaStep ? "تأكيد OTP والدخول" : "الدخول إلى لوحة القيادة"}
+    <div className="min-h-screen lg:grid lg:grid-cols-2">
+      <div className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12">
+        <div className="absolute inset-0 nasaq-gradient opacity-95" />
+        <div className="relative z-10">
+          <Logo size="lg" className="[&_span]:text-white [&_p]:text-white/90" />
+        </div>
+        <div className="relative z-10 space-y-4 text-white">
+          <h1 className="text-3xl font-bold leading-tight">{brand.taglineAr}</h1>
+          <p className="max-w-md text-white/85">{brand.description}</p>
+        </div>
+        <p className="relative z-10 text-sm text-white/70">© {new Date().getFullYear()} {brand.nameAr}</p>
+      </div>
+
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <Card className="w-full max-w-md surface-glass animate-slide-up">
+          <CardHeader className="lg:hidden">
+            <Logo size="md" className="mb-2" />
+            <CardTitle>تسجيل الدخول</CardTitle>
+            <CardDescription>ادخل إلى مساحة عمل {brand.nameAr} بأمان.</CardDescription>
+          </CardHeader>
+          <CardHeader className="hidden lg:block">
+            <CardTitle>تسجيل الدخول</CardTitle>
+            <CardDescription>ادخل إلى مساحة عمل {brand.nameAr} بأمان.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <form className="flex flex-col gap-3" onSubmit={onSubmit}>
+              <Input
+                placeholder="البريد الإلكتروني"
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setSuperAdminMfaStep(false);
+                  setOtpCode("");
+                  setDevBypassOtp(false);
+                }}
+                required
+                disabled={superAdminMfaStep}
+              />
+              <Input
+                type="password"
+                placeholder="كلمة المرور"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setSuperAdminMfaStep(false);
+                  setOtpCode("");
+                  setDevBypassOtp(false);
+                }}
+                required
+              />
+              {superAdminMfaStep ? (
+                <>
+                  <p className="text-sm text-muted-foreground">أدخل رمز OTP لمشرف المنصة (TOTP).</p>
+                  <Input
+                    placeholder="رمز OTP (6 أرقام)"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                    inputMode="numeric"
+                    maxLength={6}
+                    disabled={devBypassOtp && Boolean(DEV_SUPERADMIN_OTP)}
+                    required={!devBypassOtp || !DEV_SUPERADMIN_OTP}
+                  />
+                  {DEV_SUPERADMIN_OTP ? (
+                    <label className="flex select-none items-center justify-between rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-sm">
+                      <span className="flex items-center gap-2">
+                        <span>تجاوز OTP (تطوير)</span>
+                        <Badge variant="outline">DEV</Badge>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={devBypassOtp}
+                        onChange={(e) => setDevBypassOtp(e.target.checked)}
+                      />
+                    </label>
+                  ) : null}
+                </>
+              ) : null}
+              {err ? <p className="text-sm text-danger">{err}</p> : null}
+              <Button type="submit" variant="brand" disabled={loading} className="w-full">
+                {loading ? "..." : superAdminMfaStep ? "تأكيد والدخول" : "الدخول"}
+              </Button>
+            </form>
+            <Button variant="ghost" asChild>
+              <Link href="/">العودة إلى {brand.nameAr}</Link>
             </Button>
-          </form>
-          <Button variant="ghost" asChild>
-            <Link href="/">العودة إلى الصفحة الرئيسية</Link>
-          </Button>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

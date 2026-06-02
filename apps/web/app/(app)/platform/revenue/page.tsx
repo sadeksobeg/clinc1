@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/format";
 import { LocalOpsRevenueProvider } from "@/lib/platform/providers/revenueProvider";
@@ -12,13 +13,10 @@ export default async function PlatformRevenuePage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">مركز الإيرادات</h1>
-        </div>
-        <p className="text-ds-small text-muted-foreground">المصدر: فوترة محلية (Ops)</p>
-      </header>
+      <PlatformPageHeader
+        title="مركز الإيرادات"
+        right={<p className="text-ds-small text-muted-foreground">المصدر: فوترة محلية (Ops)</p>}
+      />
 
       <div className="grid gap-cg-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="glass-card">

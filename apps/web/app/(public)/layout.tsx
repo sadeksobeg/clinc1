@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
 import { PublicShell } from "@/components/marketing/public-shell";
+import { brand, brandTitle } from "@/lib/brand";
 
 export const metadata: Metadata = {
-  title: "كلينك ساس - موظف استقبال ذكي للعيادات",
-  description: "موظف استقبال ذكي لعيادتك يعمل 24/7 عبر واتساب: حجز تلقائي، متابعة مرضى، وتقارير أداء.",
+  title: brandTitle("موظف استقبال ذكي للعيادات"),
+  description: brand.taglineAr,
   openGraph: {
-    title: "كلينك ساس - موظف استقبال ذكي للعيادات",
-    description: "ابدأ 3 أيام مجانية بدون بطاقة دفع.",
+    title: brandTitle(),
+    description: brand.description,
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "كلينك ساس",
-    description: "حوّل واتساب إلى موظف استقبال خارق.",
+    title: brand.nameAr,
+    description: brand.taglineAr,
   },
 };
 

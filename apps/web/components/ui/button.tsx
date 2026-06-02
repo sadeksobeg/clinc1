@@ -8,7 +8,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-soft hover:brightness-110 hover:shadow-md",
+        default: "bg-primary text-primary-foreground shadow-soft hover:brightness-110 hover:shadow-glow",
+        brand:
+          "nasaq-gradient text-white shadow-glow hover:brightness-105 hover:shadow-[0_12px_32px_-8px_hsl(var(--primary)/0.4)]",
         secondary: "bg-secondary text-secondary-foreground hover:brightness-110 hover:shadow-sm",
         outline: "border border-border bg-background hover:bg-muted hover:shadow-sm",
         ghost: "hover:bg-muted/70",

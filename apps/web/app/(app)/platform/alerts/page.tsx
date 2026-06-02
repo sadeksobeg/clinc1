@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ErrorState } from "@/components/platform/AsyncState";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { TableSkeleton } from "@/components/platform/TableSkeleton";
 
 type Health = {
@@ -86,10 +87,7 @@ export default function PlatformAlertsPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header>
-        <p className="text-ds-body text-muted-foreground">المنصة</p>
-        <h1 className="text-ds-h1 font-semibold tracking-tight">مركز التنبيهات</h1>
-      </header>
+      <PlatformPageHeader title="مركز التنبيهات" />
       {status === "loading" ? <TableSkeleton rows={6} /> : null}
       {status === "error" ? <ErrorState title="تعذر تحميل التنبيهات" description={errMsg} onRetry={() => window.location.reload()} /> : null}
       {status === "success" ? (

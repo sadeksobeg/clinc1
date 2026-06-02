@@ -4,6 +4,7 @@ import { RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchWithRetry } from "@/lib/fetch-retry";
@@ -192,22 +193,23 @@ export function BillingAdminWorkspace() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-center justify-between gap-cg-2">
-        <div>
-          <p className="text-ds-body text-muted-foreground">اعتمادات يدوية ولوحة إيرادات الفوترة المحلية</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">إدارة الفوترة</h1>
-        </div>
-        <div className="flex gap-cg-2">
-          <Button variant="outline" onClick={() => void loadAll()} disabled={loading}>
-            <RefreshCw className="h-4 w-4" />
-            تحديث
-          </Button>
-          <Button onClick={runReminders} disabled={remindersBusy}>
-            <WalletCards className="h-4 w-4" />
-            {remindersBusy ? "جار تشغيل التذكيرات..." : "تشغيل تذكيرات واتساب"}
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        subtitle="نسق — المنصة"
+        title="إدارة الفوترة"
+        description="اعتمادات يدوية ولوحة إيرادات الفوترة المحلية"
+        right={
+          <>
+            <Button variant="outline" onClick={() => void loadAll()} disabled={loading}>
+              <RefreshCw className="h-4 w-4" />
+              تحديث
+            </Button>
+            <Button onClick={runReminders} disabled={remindersBusy}>
+              <WalletCards className="h-4 w-4" />
+              {remindersBusy ? "جار تشغيل التذكيرات..." : "تشغيل تذكيرات واتساب"}
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid gap-cg-4 md:grid-cols-3">
         <StatCard title="الإيراد الشهري المتوقع" value={formatCurrency(Number(summary?.projected_mrr_usd || 0))} />

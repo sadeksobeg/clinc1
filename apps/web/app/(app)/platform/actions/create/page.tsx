@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,13 +38,7 @@ export default function PlatformCreateActionPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">إنشاء إجراء</h1>
-        </div>
-        <Badge variant="secondary">يدوي</Badge>
-      </header>
+      <PlatformPageHeader title="إنشاء إجراء" right={<Badge variant="secondary">يدوي</Badge>} />
 
       <Card className="glass-card">
         <CardHeader className="pb-cg-2">

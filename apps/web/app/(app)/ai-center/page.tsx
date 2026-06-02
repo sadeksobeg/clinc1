@@ -1,5 +1,6 @@
 import { AlertTriangle, Bot, Brain, CircleGauge, TrendingUp } from "lucide-react";
 import type { ComponentType } from "react";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCompactNumber, safePercent } from "@/lib/format";
@@ -16,12 +17,7 @@ export default async function AiCenterPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">صحة النموذج والتحكم بالأتمتة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">مركز الذكاء الاصطناعي</h1>
-        </div>
-      </header>
+      <PageHeader subtitle="نسق — الذكاء الاصطناعي" title="مركز الذكاء الاصطناعي" description="صحة النموذج والتحكم بالأتمتة" />
 
       <div className="grid gap-cg-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={Bot} title="حالة المؤشرات" value={metricsData.ok ? "متصلة" : "غير متاحة"} />

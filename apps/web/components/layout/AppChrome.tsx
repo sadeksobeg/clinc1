@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { AlertTriangle, Bell, Globe2, LayoutGrid, LogOut, Menu, Moon, Plus, Rows3, Search, Sparkles, Sun } from "lucide-react";
+import { AlertTriangle, Bell, Globe2, LayoutGrid, LogOut, Menu, Moon, Plus, Rows3, Search, Sun } from "lucide-react";
+import { Logo } from "@/components/brand/Logo";
+import { brand } from "@/lib/brand";
 import { useEffect, useState } from "react";
 import { primaryNavigation } from "@/lib/navigation";
 import { platformNavigation } from "@/lib/platform-navigation";
@@ -181,12 +183,10 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen overflow-hidden">
         <aside className="hidden w-72 border-e border-border/70 bg-card/80 px-cg-4 py-cg-5 backdrop-blur-xl lg:flex lg:flex-col">
           <Link href="/dashboard" className="mb-cg-6 flex items-center gap-cg-3 rounded-2xl px-cg-3 py-cg-2 hover:bg-muted/70">
-            <div className="grid h-10 w-10 place-content-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-ds-body text-muted-foreground">منصة تشغيل العيادات</p>
-              <p className="text-ds-h3 font-semibold">ميد أوتو سويت</p>
+            <Logo size="md" />
+            <div className="min-w-0">
+              <p className="text-ds-label text-muted-foreground">{brand.nameEn}</p>
+              <p className="truncate text-ds-h3 font-semibold">{brand.nameAr}</p>
             </div>
           </Link>
 
@@ -201,7 +201,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
                   className={cn(
                     "group flex items-center gap-cg-3 rounded-2xl px-cg-3 py-cg-3 text-ds-body transition-all",
                     active
-                      ? "bg-primary text-primary-foreground shadow-sm"
+                      ? "nasaq-gradient text-white shadow-glow"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
@@ -221,11 +221,11 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
           <div className="mt-auto flex flex-col gap-cg-4 rounded-2xl border border-border/70 bg-muted/40 p-cg-4">
             <div className="flex items-center gap-cg-3">
               <Avatar>
-                <AvatarFallback>MC</AvatarFallback>
+                <AvatarFallback>{brand.nameAr.slice(0, 2)}</AvatarFallback>
               </Avatar>
               <div>
-                <p className="text-ds-body font-medium">عيادة ميد أوتو</p>
-                <p className="text-ds-small text-muted-foreground">الباقة الطبية الاحترافية</p>
+                <p className="text-ds-body font-medium">مساحة العمل</p>
+                <p className="text-ds-small text-muted-foreground">{brand.taglineAr.slice(0, 42)}…</p>
               </div>
             </div>
             <div className="flex items-center justify-between">

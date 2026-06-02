@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,16 +46,15 @@ export default function PlatformSettingsPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">إعدادات المنصة</h1>
-          <p className="mt-cg-2 text-ds-body text-muted-foreground">هذه الصفحة تشرح لك بسرعة لماذا بعض الصفحات لا تعرض بيانات، وما الذي يجب أن يكون شغالاً.</p>
-        </div>
-        <Button variant="outline" onClick={() => void setupQ.refetch()} disabled={setupQ.isFetching}>
-          تحديث
-        </Button>
-      </header>
+      <PlatformPageHeader
+        title="إعدادات المنصة"
+        description="هذه الصفحة تشرح لك بسرعة لماذا بعض الصفحات لا تعرض بيانات، وما الذي يجب أن يكون شغالاً."
+        right={
+          <Button variant="outline" onClick={() => void setupQ.refetch()} disabled={setupQ.isFetching}>
+            تحديث
+          </Button>
+        }
+      />
 
       {setupQ.isLoading ? <LoadingState title="جارٍ فحص التهيئة..." /> : null}
       {setupQ.isError ? (

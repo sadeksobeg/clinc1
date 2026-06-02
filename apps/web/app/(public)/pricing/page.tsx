@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { brandTitle } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 export const metadata: Metadata = {
-  title: "الأسعار | كلينك ساس",
+  title: brandTitle("الأسعار"),
   description: "خطة واضحة للعيادات: 120$ شهريا للطبيب الأول + 30$ لكل طبيب إضافي.",
 };
 

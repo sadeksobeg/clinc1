@@ -33,7 +33,7 @@ export default async function DoctorQueuePage() {
       />
 
       <div className="grid gap-cg-4 lg:grid-cols-2">
-        <Card>
+        <Card className="glass-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
               <CalendarDays className="h-4 w-4" />
@@ -68,7 +68,7 @@ export default async function DoctorQueuePage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
               <MessageCircle className="h-4 w-4" />

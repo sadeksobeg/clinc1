@@ -4,54 +4,58 @@
 
 @layer base {
   :root {
-    --background: 220 25% 99%;
-    --foreground: 224 27% 14%;
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 224 27% 14%;
-    --muted: 220 20% 96%;
-    --muted-foreground: 220 12% 44%;
-    --accent: 262 83% 58%;
+    --card-foreground: 222 47% 11%;
+    --muted: 210 32% 95%;
+    --muted-foreground: 215 16% 42%;
+    --accent: 217 91% 55%;
     --accent-foreground: 0 0% 100%;
-    --border: 220 18% 90%;
-    --input: 220 18% 90%;
-    --ring: 218 82% 53%;
-    --primary: 218 82% 53%;
+    --border: 214 24% 88%;
+    --input: 214 24% 88%;
+    --ring: 174 72% 40%;
+    --primary: 174 72% 40%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 173 80% 40%;
+    --secondary: 217 91% 55%;
     --secondary-foreground: 0 0% 100%;
-    --success: 160 84% 39%;
-    --danger: 0 84% 60%;
-    --warning: 39 92% 50%;
-    /* Operational / system (Clinic OS semantic) */
+    --success: 160 84% 36%;
+    --danger: 0 72% 51%;
+    --warning: 38 92% 50%;
     --info: 199 89% 48%;
-    --surface: 220 25% 99%;
+    --surface: 210 40% 98%;
     --surface-elevated: 0 0% 100%;
-    --radius: 1rem;
+    --radius: 0.875rem;
+    --brand-from: 174 72% 40%;
+    --brand-via: 189 85% 42%;
+    --brand-to: 217 91% 55%;
   }
 
   .dark {
-    --background: 226 28% 9%;
+    --background: 222 47% 7%;
     --foreground: 210 40% 98%;
-    --card: 227 25% 12%;
+    --card: 222 40% 10%;
     --card-foreground: 210 40% 98%;
-    --muted: 226 21% 16%;
-    --muted-foreground: 220 13% 72%;
-    --accent: 262 84% 64%;
+    --muted: 222 32% 14%;
+    --muted-foreground: 215 18% 68%;
+    --accent: 217 91% 60%;
     --accent-foreground: 210 40% 98%;
-    --border: 228 18% 24%;
-    --input: 228 18% 24%;
-    --ring: 218 82% 53%;
-    --primary: 218 82% 53%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 173 76% 39%;
+    --border: 222 24% 20%;
+    --input: 222 24% 20%;
+    --ring: 174 65% 45%;
+    --primary: 174 65% 45%;
+    --primary-foreground: 222 47% 7%;
+    --secondary: 217 91% 58%;
     --secondary-foreground: 0 0% 100%;
-    --success: 160 84% 39%;
-    --danger: 0 84% 60%;
-    --warning: 39 92% 50%;
+    --success: 160 72% 42%;
+    --danger: 0 72% 55%;
+    --warning: 38 92% 52%;
     --info: 199 89% 55%;
-    /* Aligned with Clinic OS dark surfaces (~#0B1220 / #111827) */
-    --surface: 220 39% 8%;
-    --surface-elevated: 217 19% 17%;
+    --surface: 222 47% 7%;
+    --surface-elevated: 222 40% 12%;
+    --brand-from: 174 65% 45%;
+    --brand-via: 189 80% 48%;
+    --brand-to: 217 91% 60%;
   }
 
   * {
@@ -60,23 +64,108 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: "Tajawal", "Cairo", "Inter", "Segoe UI", sans-serif;
   }
 }
 
 @layer utilities {
   .glass-card {
-    @apply rounded-2xl border border-white/20 bg-white/70 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/70;
+    @apply rounded-2xl border border-border/60 bg-card/80 shadow-elevated backdrop-blur-xl;
   }
 
-  /* Default interaction curve — compose with duration-ds-* */
+  .surface-glass {
+    @apply rounded-2xl border border-border/50 bg-card/70 shadow-soft backdrop-blur-xl;
+  }
+
+  .nasaq-gradient {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--brand-from)) 0%,
+      hsl(var(--brand-via)) 48%,
+      hsl(var(--brand-to)) 100%
+    );
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--brand-from)) 0%,
+      hsl(var(--brand-via)) 50%,
+      hsl(var(--brand-to)) 100%
+    );
+  }
+
+  .border-gradient {
+    position: relative;
+    border: 1px solid transparent;
+    background:
+      linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+      linear-gradient(135deg, hsl(var(--brand-from)), hsl(var(--brand-to))) border-box;
+  }
+
+  .hover-lift {
+    @apply clinic-motion duration-ds-normal ease-ds-out;
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px -8px hsl(var(--primary) / 0.22);
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.4s ease-out both;
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.45s ease-out both;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--muted-foreground) / 0.08) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
   .clinic-motion {
-    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow,
-      transform, filter;
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity,
+      box-shadow, transform, filter;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* Elite operational motion (must remain subtle; speed > spectacle) */
   @keyframes clinic-ops-now-ring {
     0% {
       box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
@@ -158,12 +247,19 @@
     .clinic-ops-now,
     .clinic-ops-late,
     .clinic-ops-late-halo,
-    .clinic-ops-emergency {
+    .clinic-ops-emergency,
+    .animate-fade-in,
+    .animate-slide-up,
+    .shimmer {
       animation: none !important;
     }
 
     .clinic-ops-appt-flash {
       animation: none !important;
+    }
+
+    .hover-lift:hover {
+      transform: none;
     }
   }
 }

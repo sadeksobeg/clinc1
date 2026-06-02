@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState } from "@/components/platform/AsyncState";
@@ -47,13 +48,10 @@ export default function PlatformSearchPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">بحث شامل</h1>
-        </div>
-        <Badge variant="secondary">{loading ? "جارٍ البحث..." : "جاهز"}</Badge>
-      </header>
+      <PlatformPageHeader
+        title="بحث شامل"
+        right={<Badge variant="secondary">{loading ? "جارٍ البحث..." : "جاهز"}</Badge>}
+      />
 
       <div className="flex flex-wrap gap-cg-2">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث: clinic name / phone / chat_id / conversation_id / payment_request_id" />

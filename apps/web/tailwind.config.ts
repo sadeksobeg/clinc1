@@ -78,11 +78,32 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
+        brand: {
+          from: "hsl(var(--brand-from))",
+          via: "hsl(var(--brand-via))",
+          to: "hsl(var(--brand-to))",
+        },
       },
       boxShadow: {
-        soft: "0 10px 30px rgba(37,99,235,0.08)",
+        soft: "0 10px 40px -12px hsl(var(--primary) / 0.18)",
+        glow: "0 0 40px -8px hsl(var(--primary) / 0.35)",
+        elevated: "0 4px 24px -4px hsl(222 47% 11% / 0.12), 0 1px 3px hsl(222 47% 11% / 0.06)",
         "ds-sm": "0 1px 2px rgba(0,0,0,0.2)",
         "ds-md": "0 4px 12px rgba(0,0,0,0.3)",
+      },
+      keyframes: {
+        "fade-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
+        "slide-up": {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        "fade-in": "fade-in 0.4s ease-out both",
+        "slide-up": "slide-up 0.45s ease-out both",
       },
     },
   },

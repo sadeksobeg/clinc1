@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -181,10 +182,11 @@ export function ManualBillingWorkspace() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-col gap-cg-1">
-        <p className="text-ds-body text-muted-foreground">الفوترة اليدوية للسوق المحلي (نقدي + شام كاش)</p>
-        <h1 className="text-ds-h1 font-semibold tracking-tight">الفوترة</h1>
-      </header>
+      <PageHeader
+        subtitle="نسق — العيادة"
+        title="الفوترة"
+        description="الفوترة اليدوية للسوق المحلي (نقدي + شام كاش)"
+      />
 
       {loading ? (
         <div className="grid gap-cg-4 md:grid-cols-4">

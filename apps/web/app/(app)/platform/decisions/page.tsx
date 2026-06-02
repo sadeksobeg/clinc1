@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -70,11 +71,9 @@ export default function PlatformDecisionsPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">القرارات</h1>
-        </div>
+      <PlatformPageHeader
+        title="القرارات"
+        right={
         <div className="flex flex-wrap items-center gap-cg-2">
           {canCreate ? (
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -157,7 +156,8 @@ export default function PlatformDecisionsPage() {
           ) : null}
           <Badge variant="secondary">{status === "loading" ? "جارٍ التحميل..." : `العدد=${rows.length}`}</Badge>
         </div>
-      </header>
+        }
+      />
 
       {status === "loading" ? <TableSkeleton rows={10} /> : null}
       {status === "error" ? <ErrorState title="تعذر تحميل القرارات" description={errMsg} onRetry={() => void decisionsQ.refetch()} /> : null}

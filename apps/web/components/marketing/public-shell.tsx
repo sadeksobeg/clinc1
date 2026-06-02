@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
+import { Logo } from "@/components/brand/Logo";
+import { brand } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,13 +37,13 @@ export function PublicShell({
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="bg-primary px-4 py-2 text-center text-xs font-medium text-primary-foreground sm:text-sm">
-        ابدأ الآن - 3 أيام مجانية بدون بطاقة دفع
+      <div className="nasaq-gradient px-4 py-2 text-center text-xs font-medium text-white sm:text-sm">
+        ابدأ الآن — 3 أيام مجانية بدون بطاقة دفع
       </div>
-      <header className="sticky top-0 z-40 border-b border-white/30 bg-background/70 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          <Link href="/" className="text-lg font-bold tracking-tight">
-            كلينك ساس
+          <Link href="/" className="hover:opacity-90">
+            <Logo size="md" showEn />
           </Link>
           <nav className="hidden items-center gap-6 md:flex">
             {navItems.map((item) => (
@@ -50,7 +52,7 @@ export function PublicShell({
                 href={item.href}
                 className={cn(
                   "text-sm text-muted-foreground transition hover:text-foreground",
-                  active === item.href && "text-foreground",
+                  active === item.href && "font-medium text-primary",
                 )}
               >
                 {item.label}
@@ -61,8 +63,8 @@ export function PublicShell({
             <Button asChild variant="ghost">
               <Link href="/login">دخول</Link>
             </Button>
-            <Button asChild>
-              <Link href="/trial">ابدأ مجانا</Link>
+            <Button asChild variant="brand">
+              <Link href="/trial">ابدأ مجاناً</Link>
             </Button>
           </div>
           <Dialog>
@@ -85,8 +87,8 @@ export function PublicShell({
                   <Button asChild variant="ghost">
                     <Link href="/login">دخول</Link>
                   </Button>
-                  <Button asChild>
-                    <Link href="/trial">ابدأ مجانا</Link>
+                  <Button asChild variant="brand">
+                    <Link href="/trial">ابدأ مجاناً</Link>
                   </Button>
                 </div>
               </div>
@@ -96,45 +98,45 @@ export function PublicShell({
       </header>
 
       {title ? (
-        <section className="mx-auto max-w-7xl px-4 pb-3 pt-12 sm:px-6">
+        <section className="mx-auto max-w-7xl px-4 pb-3 pt-12 sm:px-6 animate-slide-up">
           <h1 className="text-3xl font-bold sm:text-4xl">{title}</h1>
         </section>
       ) : null}
 
       <main>{children}</main>
 
-      <div className="fixed inset-x-0 bottom-3 z-40 mx-auto w-[calc(100%-1.5rem)] max-w-md rounded-2xl border bg-background/95 p-2 shadow-xl backdrop-blur md:hidden">
+      <div className="fixed inset-x-0 bottom-3 z-40 mx-auto w-[calc(100%-1.5rem)] max-w-md rounded-2xl border border-border/60 bg-card/95 p-2 shadow-elevated backdrop-blur md:hidden">
         <div className="grid grid-cols-2 gap-2">
           <Button asChild variant="outline">
             <Link href="/demo">احجز عرض</Link>
           </Button>
-          <Button asChild>
-            <Link href="/trial">ابدأ مجانا</Link>
+          <Button asChild variant="brand">
+            <Link href="/trial">ابدأ مجاناً</Link>
           </Button>
         </div>
       </div>
 
-      <footer className="mt-20 border-t bg-muted/40">
+      <footer className="mt-20 border-t bg-muted/30">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:grid-cols-3 sm:px-6">
           <div>
-            <p className="text-lg font-bold">كلينك ساس</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              منصة تشغيل عيادات متقدمة مع واتساب ذكي، حجز، ومتابعة مرضى في تجربة واحدة.
-            </p>
+            <Logo size="md" />
+            <p className="mt-3 text-sm text-muted-foreground">{brand.taglineAr}</p>
           </div>
           <div className="space-y-2 text-sm">
             <p className="font-medium">روابط</p>
             {navItems.map((item) => (
-              <Link key={item.href} href={item.href} className="block text-muted-foreground hover:text-foreground">
+              <Link key={item.href} href={item.href} className="block text-muted-foreground hover:text-primary">
                 {item.label}
               </Link>
             ))}
           </div>
           <div className="space-y-2 text-sm">
             <p className="font-medium">تواصل</p>
-            <p className="text-muted-foreground">واتساب: +966 55 000 0000</p>
-            <p className="text-muted-foreground">البريد الإلكتروني: hello@clinicsaas.app</p>
-            <p className="text-muted-foreground">© {new Date().getFullYear()} كلينك ساس</p>
+            <p className="text-muted-foreground">واتساب: {brand.phoneDisplay}</p>
+            <p className="text-muted-foreground">البريد: {brand.email}</p>
+            <p className="text-muted-foreground">
+              © {new Date().getFullYear()} {brand.nameAr} ({brand.nameEn})
+            </p>
           </div>
         </div>
       </footer>

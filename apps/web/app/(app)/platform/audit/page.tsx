@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState, EmptyState } from "@/components/platform/AsyncState";
 import { TableSkeleton } from "@/components/platform/TableSkeleton";
@@ -65,13 +66,10 @@ export default function PlatformAuditPage() {
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">استعراض التدقيق</h1>
-        </div>
-        <Badge variant="secondary">{auditQ.isLoading ? "جارٍ التحميل..." : `${logs.length} سجل`}</Badge>
-      </header>
+      <PlatformPageHeader
+        title="استعراض التدقيق"
+        right={<Badge variant="secondary">{auditQ.isLoading ? "جارٍ التحميل..." : `${logs.length} سجل`}</Badge>}
+      />
 
       <div className="flex flex-wrap gap-cg-2">
         <Input value={clinicId} onChange={(e) => setClinicId(e.target.value)} placeholder="رقم العيادة (0 = الكل)" className="max-w-xs" />

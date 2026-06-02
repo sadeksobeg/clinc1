@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/layout/PageHeader";
 import { AnalyticsCharts } from "@/features/analytics/analytics-charts";
 import { DashboardWidgets } from "@/features/dashboard/widgets";
 import { ExecutiveCharts } from "@/features/dashboard/executive-charts";
@@ -53,21 +54,21 @@ export default async function AnalyticsPage() {
 
   return (
     <div className="flex flex-col gap-cg-6">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">تحليلات البيانات للقرارات التنفيذية</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">التحليلات</h1>
-        </div>
-        <div className="rounded-2xl border border-border bg-card px-cg-4 py-cg-2 text-ds-body text-muted-foreground">
-          {aiRate == null ? (
-            <span>مؤشرات الذكاء الاصطناعي غير متاحة حالياً.</span>
-          ) : (
-            <span>
-              الذكاء الاصطناعي عالج <span className="font-semibold text-foreground">{aiRate}%</span> من المحادثات الواردة.
-            </span>
-          )}
-        </div>
-      </header>
+      <PageHeader
+        subtitle="نسق — تحليلات تنفيذية"
+        title="التحليلات"
+        right={
+          <div className="glass-card rounded-2xl border border-border px-cg-4 py-cg-2 text-ds-body text-muted-foreground">
+            {aiRate == null ? (
+              <span>مؤشرات الذكاء الاصطناعي غير متاحة حالياً.</span>
+            ) : (
+              <span>
+                الذكاء الاصطناعي عالج <span className="font-semibold text-foreground">{aiRate}%</span> من المحادثات الواردة.
+              </span>
+            )}
+          </div>
+        }
+      />
       {!appointmentsData.ok || !metricsData.ok ? (
         <p className="rounded-2xl border border-border/80 bg-muted/30 px-cg-4 py-cg-3 text-ds-body text-muted-foreground">
           بعض البيانات غير متاحة الآن:{" "}

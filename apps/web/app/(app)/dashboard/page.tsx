@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/layout/PageHeader";
 import { NurseCommandCenter } from "@/features/operations/nurse-command-center";
 import {
   fetchClinicSettings,
@@ -46,17 +47,19 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-cg-4">
-      <header className="shrink-0">
-        <p className="text-ds-body text-muted-foreground">مركز التشغيل اللحظي</p>
-        <h1 className="text-ds-h1 font-semibold tracking-tight">لوحة الممرضة</h1>
-        <p className="mt-cg-1 max-w-2xl text-ds-body text-muted-foreground">
-          طابور حي، جدول اليوم، وإجراءات سريعة في شاشة واحدة. للمؤشرات التنفيذية والرسوم البيانية انتقل إلى{" "}
-          <a href="/analytics" className="font-medium text-primary underline underline-offset-4">
-            التحليلات
-          </a>
-          .
-        </p>
-      </header>
+      <PageHeader
+        subtitle="نسق — مركز التشغيل اللحظي"
+        title="لوحة الممرضة"
+        description={
+          <>
+            طابور حي، جدول اليوم، وإجراءات سريعة في شاشة واحدة. للمؤشرات التنفيذية والرسوم البيانية انتقل إلى{" "}
+            <a href="/analytics" className="font-medium text-primary underline underline-offset-4">
+              التحليلات
+            </a>
+            .
+          </>
+        }
+      />
 
       {showPartialBanner ? (
         <div className="shrink-0 rounded-2xl border border-border/80 bg-muted/30 px-cg-4 py-cg-3 text-ds-body text-muted-foreground">

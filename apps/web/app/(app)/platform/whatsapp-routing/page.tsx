@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { PlatformPageHeader } from "@/components/platform/PlatformPageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -99,15 +100,10 @@ export default function WhatsAppRoutingAdminPage() {
 
   return (
     <div className="flex flex-col gap-cg-5" dir="rtl">
-      <header className="flex flex-wrap items-end justify-between gap-cg-3">
-        <div>
-          <p className="text-ds-body text-muted-foreground">المنصة</p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">توجيه واتساب متعدد العيادات</h1>
-          <p className="mt-cg-2 text-ds-body text-muted-foreground">
-            إدارة التخصصات، أرقام واتساب، حالة الحماية ضد الحظر، والتحكم الفوري.
-          </p>
-        </div>
-      </header>
+      <PlatformPageHeader
+        title="توجيه واتساب متعدد العيادات"
+        description="إدارة التخصصات، أرقام واتساب، حالة الحماية ضد الحظر، والتحكم الفوري."
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex flex-wrap">
