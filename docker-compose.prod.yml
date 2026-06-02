@@ -92,7 +92,7 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
       NODE_ENV: production
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL-redis://redis:6379}
       HEALTH_DEEP_TOKEN: ${HEALTH_DEEP_TOKEN:-}
       SYSTEM_MODE: ${SYSTEM_MODE:-production}
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
@@ -136,7 +136,7 @@ services:
       redis:
         condition: service_started
     environment:
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL-redis://redis:6379}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clinicsaas}
       REDIS_EVENTS_STREAM: ${REDIS_EVENTS_STREAM:-ops:events:inbound}
       REDIS_CONSUMER_GROUP: ${REDIS_CONSUMER_GROUP:-ops-core}
