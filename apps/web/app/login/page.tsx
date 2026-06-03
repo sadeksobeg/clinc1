@@ -193,26 +193,9 @@ export default function LoginPage() {
               ) : null}
               {err ? <p className="text-sm text-danger">{err}</p> : null}
               <Button type="submit" variant="brand" disabled={loading} className="w-full">
-                {loading ? "..." : superAdminMfaStep ? "تأكيد والدخول" : "دخول العيادة"}
+                {loading ? "..." : superAdminMfaStep ? "تأكيد والدخول" : "الدخول"}
               </Button>
             </form>
-            <div className="relative flex items-center gap-3 py-1 text-sm text-muted-foreground">
-              <span className="h-px flex-1 bg-border" />
-              <span>أو</span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={loading}
-              onClick={() => {
-                setEmail((e) => e || "admin@platform.local");
-                setSuperAdminMfaStep(false);
-              }}
-            >
-              دخول المنصة (Super Admin)
-            </Button>
             <Button variant="ghost" asChild>
               <Link href="/">العودة إلى {brand.nameAr}</Link>
             </Button>
