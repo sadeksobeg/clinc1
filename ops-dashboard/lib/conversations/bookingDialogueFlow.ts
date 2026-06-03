@@ -22,6 +22,7 @@ import { formatClinicTodayHoursAr } from "@/lib/scheduling/clinicPublicHours";
 import type { NormalizedInboundRules } from "./normalizeInbound";
 import { parseListSelectionWithOrdinals1Based, parseTimeOfDayFromText } from "./dialogueParse";
 import { formatDateTimeAr } from "./whatsappTime";
+import { buildMainMenuResetTurn, dialogueStateClearedMerge, isDialogueStateStale, isSessionResetIntent } from "./dialogueSessionReset";
 import {
   askPatientFullName,
   chooseClinicIntro,
@@ -36,6 +37,7 @@ import {
   repromptSpecialty,
   singleSlotConfirmLine,
   slotListIntro,
+  welcomeMainMenu,
 } from "./patientCopy";
 import { detectTimePreference, filterSlotsByTimePreference, type TimePreference } from "./timePreference";
 import type {
@@ -100,10 +102,26 @@ function timePrefForMerge(text: string): DialogueTimePref | null {
   return null;
 }
 
+const INTERACTIVE_STEPS = new Set([
+  "slot_offer",
+  "choose_doctor",
+  "choose_clinic",
+  "awaiting_specialty",
+  "awaiting_display_name",
+  "awaiting_confirm",
+]);
+
 function unparsedInteractiveTurn(
   d: StoredDialogueState,
   specificReprompt: string,
+  inboundText?: string,
 ): ConsumedBookingTurn {
+  if (inboundText && isSessionResetIntent(inboundText)) {
+    return buildMainMenuResetTurn();
+  }
+  if (INTERACTIVE_STEPS.has(d.flow_step) && (d.consecutive_unparsed ?? 0) >= 1) {
+    return buildMainMenuResetTurn();
+  }
   const prev = d.consecutive_unparsed ?? 0;
   const next = prev + 1;
   if (next >= FAILSAFE_UNPARSED_THRESHOLD) {
@@ -130,6 +148,16 @@ function unparsedInteractiveTurn(
     };
   }
   incProductMetric("ai_confusion_total");
+  if (INTERACTIVE_STEPS.has(d.flow_step)) {
+    return {
+      reply_text: `${welcomeMainMenu()}\n\n${specificReprompt}`,
+      finalIntent: "BOOKING",
+      finalPriority: 2,
+      decision_source: "dialogue_reprompt_menu_hint",
+      handoff_required: false,
+      dialogueMerge: { ...dialogueStateClearedMerge(), consecutive_unparsed: next },
+    };
+  }
   return {
     reply_text: `${confusedRecoveryMenu()}\n\n${specificReprompt}`,
     finalIntent: "BOOKING",
@@ -508,12 +536,15 @@ export async function tryConsumeBookingDialogueTurn(
   },
 ): Promise<ConsumedBookingTurn | null> {
   const { crm, norm, dialogue: d } = args;
+  if (isSessionResetIntent(norm.text) || isDialogueStateStale(d)) {
+    return buildMainMenuResetTurn();
+  }
   const step = d.flow_step;
 
   if (step === "awaiting_display_name" && d.collect_field === "display_name") {
     const name = norm.text.trim();
     if (name.length < 2) {
-      return unparsedInteractiveTurn(d, askPatientFullName());
+      return unparsedInteractiveTurn(d, askPatientFullName(), norm.text);
     }
     await pool.query(`UPDATE patients SET display_name = $1, updated_at = NOW() WHERE id = $2`, [
       name.slice(0, 200),
@@ -606,13 +637,13 @@ export async function tryConsumeBookingDialogueTurn(
         },
       };
     }
-    return unparsedInteractiveTurn(d, askPatientFullName());
+    return unparsedInteractiveTurn(d, askPatientFullName(), norm.text);
   }
 
   if (step === "awaiting_specialty" && d.pending_kind === "specialties" && d.pending_specialties?.length) {
     const pick = parseListSelectionWithOrdinals1Based(norm.text, d.pending_specialties.length);
     if (pick == null) {
-      return unparsedInteractiveTurn(d, repromptSpecialty(d.pending_specialties.length));
+      return unparsedInteractiveTurn(d, repromptSpecialty(d.pending_specialties.length), norm.text);
     }
     const chosenSpec = d.pending_specialties[pick - 1]!;
     await setConversationSelectedSpecialty(pool, crm.conversation_id, chosenSpec.specialty_id, chosenSpec.code);
@@ -691,7 +722,7 @@ export async function tryConsumeBookingDialogueTurn(
   if (step === "choose_clinic" && d.pending_kind === "clinics" && d.pending_clinics?.length) {
     const pick = parseListSelectionWithOrdinals1Based(norm.text, d.pending_clinics.length);
     if (pick == null) {
-      return unparsedInteractiveTurn(d, repromptChooseClinic(d.pending_clinics.length));
+      return unparsedInteractiveTurn(d, repromptChooseClinic(d.pending_clinics.length), norm.text);
     }
     const chosen = d.pending_clinics[pick - 1]!;
     const tp = dialogueTimePrefFromStored(d);
@@ -701,7 +732,7 @@ export async function tryConsumeBookingDialogueTurn(
   if (step === "choose_doctor" && d.pending_kind === "doctors" && d.pending_doctors?.length) {
     const pick = parseListSelectionWithOrdinals1Based(norm.text, d.pending_doctors.length);
     if (pick == null) {
-      return unparsedInteractiveTurn(d, repromptChooseDoctor());
+      return unparsedInteractiveTurn(d, repromptChooseDoctor(), norm.text);
     }
     const doc = d.pending_doctors[pick - 1]!;
     const tp = dialogueTimePrefFromStored(d);
@@ -761,7 +792,7 @@ export async function tryConsumeBookingDialogueTurn(
           },
         };
       }
-      return unparsedInteractiveTurn(d, "اختر رقم الموعد من القائمة، أو اكتب وقتًا مثل: 5:00.");
+      return unparsedInteractiveTurn(d, "للقائمة الرئيسية اكتب: قائمة أو 0", norm.text);
     }
 
     if (isMore || isChangeDay) {
@@ -806,9 +837,20 @@ export async function tryConsumeBookingDialogueTurn(
           };
         }
       }
-      return unparsedInteractiveTurn(d, repromptChooseSlot(d.pending_slots.length));
+      return unparsedInteractiveTurn(d, repromptChooseSlot(d.pending_slots.length), norm.text);
     }
     const slot = d.pending_slots[pick - 1]!;
+    if (/تجريبي|demo/i.test(slot.doctor_name)) {
+      return buildMainMenuResetTurn();
+    }
+    const docActive = await pool.query(
+      `SELECT 1 FROM doctors WHERE id = $1 AND deleted_at IS NULL AND is_active = TRUE
+       AND display_name NOT ILIKE '%تجريبي%' AND display_name NOT ILIKE '%demo%' LIMIT 1`,
+      [slot.doctor_id],
+    );
+    if (!docActive.rows[0]) {
+      return buildMainMenuResetTurn();
+    }
     return {
       reply_text: "",
       finalIntent: "BOOKING",

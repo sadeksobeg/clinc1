@@ -3,6 +3,7 @@ import type { InboundIngestRow } from "@/lib/crm/inboundIngest";
 import { parseListSelection1Based } from "./dialogueParse";
 import type { StoredDialogueState } from "./dialogueTypes";
 import type { NormalizedInboundRules } from "./normalizeInbound";
+import { buildMainMenuResetTurn, dialogueStateClearedMerge, isSessionResetIntent } from "./dialogueSessionReset";
 import { repromptMainMenu, welcomeMainMenu } from "./patientCopy";
 import type { ConsumedBookingTurn } from "./bookingDialogueFlow";
 import { startBookingDialogueFlow } from "./bookingDialogueFlow";
@@ -24,12 +25,7 @@ function isPricingKeyword(text: string): boolean {
 }
 
 function menuMerge(): Record<string, unknown> {
-  return {
-    flow_step: "awaiting_main_menu",
-    pending_kind: "main_menu",
-    consecutive_unparsed: 0,
-    updated_at: nowIso(),
-  };
+  return dialogueStateClearedMerge();
 }
 
 function pricingReply(): ConsumedBookingTurn {
@@ -96,18 +92,12 @@ export async function tryConsumeMainMenuTurn(
 
 /** First contact or idle: show numbered menu instead of a passive acknowledgment. */
 export function offerMainMenuTurn(): ConsumedBookingTurn {
-  return {
-    reply_text: welcomeMainMenu(),
-    finalIntent: "GENERAL",
-    finalPriority: 4,
-    decision_source: "main_menu_welcome",
-    handoff_required: false,
-    dialogueMerge: menuMerge(),
-  };
+  return buildMainMenuResetTurn();
 }
 
 export function shouldOfferMainMenu(dialogue: StoredDialogueState, norm: NormalizedInboundRules): boolean {
-  if (dialogue.flow_step !== "idle") return false;
   if (norm.ruleIntent === "URGENT") return false;
-  return true;
+  if (isSessionResetIntent(norm.text)) return true;
+  if (dialogue.flow_step === "idle") return true;
+  return false;
 }
