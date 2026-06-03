@@ -14,6 +14,8 @@ const bodySchema = z
     owner_password: z.string().min(8).max(200),
     doctors_count: z.number().int().min(1).max(50).optional(),
     trial_days: z.number().int().min(1).max(30).optional(),
+    specialty_ids: z.array(z.number().int().positive()).min(1).max(12),
+    doctor_names: z.array(z.string().min(2).max(120)).max(50).optional(),
   })
   .strict();
 

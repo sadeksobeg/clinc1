@@ -1,5 +1,20 @@
 /** Arabic UX copy for WhatsApp booking FSM (no free-form LLM). */
 
+export function welcomeMainMenu(): string {
+  return (
+    "أهلاً بك في العيادة.\n" +
+    "اختر ما تريد:\n" +
+    "1) حجز موعد\n" +
+    "2) الاستفسار عن الأسعار\n" +
+    "3) التحدث مع موظف\n\n" +
+    "أرسل رقم الخيار (1 أو 2 أو 3)."
+  );
+}
+
+export function repromptMainMenu(): string {
+  return "أرسل رقمًا من 1 إلى 3، أو اكتب «حجز» أو «سعر».";
+}
+
 export function confusedRecoveryMenu(): string {
   return "ما فهمت عليك تماماً.\nهل تريد:\n1) حجز موعد\n2) الاستفسار عن الأسعار أو التكلفة\n\nأرسل رقم الخيار، أو اكتب طلبك باختصار.";
 }

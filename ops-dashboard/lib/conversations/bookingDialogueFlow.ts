@@ -10,6 +10,7 @@ import {
   setConversationSelectedSpecialty,
   type SpecialtyForRouting,
 } from "@/lib/scheduling/routingActions";
+import { EXCLUDE_DEMO_DOCTOR_SQL } from "@/lib/scheduling/excludeDemoDoctors";
 import { explainNoSlots, findNextSlots } from "@/lib/scheduling/slotService";
 import type { InterpretResult } from "@/lib/scheduling/types";
 import { getClinicPublicOpenStatus } from "@/lib/scheduling/clinicPublicHours";
@@ -145,11 +146,12 @@ async function loadDoctors(
   specialty: string | null | undefined,
 ): Promise<PendingDoctorPick[]> {
   const r = await pool.query(
-    `SELECT id, display_name, specialty
-     FROM doctors
-     WHERE clinic_id = $1 AND deleted_at IS NULL AND is_active = TRUE
-       AND ($2::text IS NULL OR lower(specialty) = lower($2::text))
-     ORDER BY id ASC
+    `SELECT d.id, d.display_name, d.specialty
+     FROM doctors d
+     WHERE d.clinic_id = $1 AND d.deleted_at IS NULL AND d.is_active = TRUE
+       AND ($2::text IS NULL OR lower(d.specialty) = lower($2::text))
+       ${EXCLUDE_DEMO_DOCTOR_SQL}
+     ORDER BY d.id ASC
      LIMIT 12`,
     [clinicId, specialty || null],
   );
@@ -178,6 +180,7 @@ async function loadDoctorsBySpecialtyId(
       WHERE d.clinic_id = ANY($1::bigint[])
         AND d.deleted_at IS NULL
         AND d.is_active = TRUE
+        ${EXCLUDE_DEMO_DOCTOR_SQL}
       ORDER BY ds.is_primary DESC, d.id ASC
       LIMIT 12`,
     [clinicIds, specialtyId],
@@ -518,6 +521,35 @@ export async function tryConsumeBookingDialogueTurn(
     ]);
     const hub = typeof d.hub_clinic_id === "number" ? d.hub_clinic_id : crm.clinic_id;
     const resume = d.resume_after_name;
+    if (resume === "specialty") {
+      const envIds = routingClinicIdsFromEnv();
+      const clinicIds = routingClinicIdsFromInputs(args.routing, envIds, crm.clinic_id);
+      const specs = await listSpecialtiesForClinics(pool, clinicIds).catch(() => []);
+      if (specs.length >= 1) {
+        const picks = buildSpecialtyPicks(specs);
+        const lines = picks.map((s) => `${s.ix}) ${s.label_ar}`);
+        return {
+          reply_text: `شكراً ${name}.\n${chooseSpecialtyIntro(lines.join("\n"))}`,
+          finalIntent: "BOOKING",
+          finalPriority: 2,
+          decision_source: "dialogue_choose_specialty_after_name",
+          handoff_required: false,
+          dialogueMerge: {
+            flow_step: "awaiting_specialty",
+            pending_kind: "specialties",
+            pending_specialties: picks,
+            pending_clinics: [],
+            pending_doctors: [],
+            pending_slots: [],
+            collect_field: null,
+            resume_after_name: null,
+            hub_clinic_id: hub,
+            consecutive_unparsed: 0,
+            updated_at: nowIso(),
+          },
+        };
+      }
+    }
     if (resume === "doctors") {
       const doctors = await loadDoctors(pool, hub, d.last_specialty);
       const tp = dialogueTimePrefFromStored(d);
@@ -859,29 +891,6 @@ export async function startBookingDialogueFlow(
     opts?.skipDisplayNamePrompt === true ||
     (crm.patient_display_name && crm.patient_display_name.trim().length >= 2) ||
     (await patientHasDisplayName(pool, crm.patient_id));
-  if (!hasDisplay && (envIds.length <= 1 || selected != null)) {
-    return {
-      reply_text: askPatientFullName(),
-      finalIntent: "BOOKING",
-      finalPriority: 2,
-      decision_source: "dialogue_collect_display_name",
-      handoff_required: false,
-      dialogueMerge: {
-        flow_step: "awaiting_display_name",
-        collect_field: "display_name",
-        hub_clinic_id: selected ?? crm.clinic_id,
-        resume_after_name: "doctors",
-        pending_kind: null,
-        pending_clinics: [],
-        pending_doctors: [],
-        pending_slots: [],
-        last_specialty: interpret.specialty,
-        consecutive_unparsed: 0,
-        time_pref: tpMerge,
-        updated_at: nowIso(),
-      },
-    };
-  }
 
   // ── Specialty-first menu ──────────────────────────────────────────────
   // When patient hasn't named a specialty AND the route has multiple specialties,
@@ -903,9 +912,10 @@ export async function startBookingDialogueFlow(
     const preferredDoctorId = Number(memory?.facts_jsonb?.preferred_doctor_id || 0);
     if (Number.isFinite(preferredDoctorId) && preferredDoctorId > 0) {
       const dr = await pool.query(
-        `SELECT id, display_name, specialty, clinic_id
-           FROM doctors
-          WHERE id = $1 AND deleted_at IS NULL AND is_active = TRUE
+        `SELECT d.id, d.display_name, d.specialty, d.clinic_id
+           FROM doctors d
+          WHERE d.id = $1 AND d.deleted_at IS NULL AND d.is_active = TRUE
+          ${EXCLUDE_DEMO_DOCTOR_SQL}
           LIMIT 1`,
         [preferredDoctorId],
       );
@@ -932,7 +942,7 @@ export async function startBookingDialogueFlow(
   if (!interpret.specialty && selectedSpecialtyId == null && selectedDoctorId == null && hasDisplay) {
     const routeClinicIds = routingClinicIdsFromInputs(routing, envIds, crm.clinic_id);
     const specs = await listSpecialtiesForClinics(pool, routeClinicIds).catch(() => []);
-    if (specs.length >= 2) {
+    if (specs.length >= 1) {
       const picks = buildSpecialtyPicks(specs);
       const lines = picks.map((s) => `${s.ix}) ${s.label_ar}`);
       return {
@@ -1059,6 +1069,31 @@ export async function startBookingDialogueFlow(
   }
 
   const doctorId = doctors.length === 1 ? doctors[0]!.doctor_id : undefined;
+
+  if (!hasDisplay && (envIds.length <= 1 || selected != null)) {
+    return {
+      reply_text: askPatientFullName(),
+      finalIntent: "BOOKING",
+      finalPriority: 2,
+      decision_source: "dialogue_collect_display_name",
+      handoff_required: false,
+      dialogueMerge: {
+        flow_step: "awaiting_display_name",
+        collect_field: "display_name",
+        hub_clinic_id: selected ?? crm.clinic_id,
+        resume_after_name: doctorId != null ? "doctors" : "specialty",
+        pending_kind: null,
+        pending_clinics: [],
+        pending_doctors: [],
+        pending_slots: [],
+        last_specialty: interpret.specialty,
+        consecutive_unparsed: 0,
+        time_pref: tpMerge,
+        updated_at: nowIso(),
+      },
+    };
+  }
+
   const so = await slotOfferPayload(pool, crm, interpret.specialty, doctorId, timePrefActive);
   return {
     reply_text: so.reply,

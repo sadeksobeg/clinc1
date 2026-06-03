@@ -22,7 +22,8 @@ import {
 } from "@/lib/ai/AIModelAdapter";
 import { normalizeInboundRules, resolveInboundRouteContext, type NormalizedInboundRules } from "./normalizeInbound";
 import { parseDialogueState } from "./dialogueParse";
-import { startBookingDialogueFlow, tryConsumeBookingDialogueTurn } from "./bookingDialogueFlow";
+import { startBookingDialogueFlow, tryConsumeBookingDialogueTurn, type ConsumedBookingTurn } from "./bookingDialogueFlow";
+import { tryConsumeMainMenuTurn, offerMainMenuTurn, shouldOfferMainMenu } from "./mainMenuFlow";
 import { runSchedulingDecision, type SchedulingDecision } from "./schedulingDecision";
 import { formatDateTimeAr } from "./whatsappTime";
 import { canClinicAutoReply } from "@/lib/billing/localBilling";
@@ -1089,6 +1090,69 @@ export async function processInboundPostIngest(
       workflow_latency_ms,
       dialogue_version,
     };
+  }
+
+  const deliverDialogueTurn = async (turn: ConsumedBookingTurn): Promise<ProcessInboundResult> => {
+    const dialogue_version = await persistDialogueMergeAndOutbound(pool, {
+      clinic_id: crm.clinic_id,
+      patient_id: crm.patient_id,
+      conversation_id: crm.conversation_id,
+      merge: turn.dialogueMerge,
+      reply_text: turn.reply_text,
+      intent: turn.finalIntent,
+      priority: turn.finalPriority,
+      is_urgent: false,
+      decision_source: turn.decision_source,
+    });
+    void invalidateConvContextCache(crm.clinic_id, crm.conversation_id);
+    const send = await sendPatientAndOptionalAlert(pool, {
+      from: crm.from,
+      patientReply: turn.reply_text,
+      handoff: turn.handoff_required,
+      execute_send,
+      send_urgent_alert,
+      enqueue_on_bridge_failure,
+      normAlertTo: norm.alertTo,
+      urgentAlertText: "",
+      clinic_id: crm.clinic_id,
+      conversation_id: crm.conversation_id,
+      patient_id: crm.patient_id,
+      correlationId: ctx?.correlationId,
+    });
+    return {
+      ok: true,
+      duplicate: false,
+      clinic_id: crm.clinic_id,
+      patient_id: crm.patient_id,
+      conversation_id: crm.conversation_id,
+      inbound_message_id: crm.inbound_message_id,
+      dedupeHash: crm.dedupeHash,
+      finalIntent: turn.finalIntent,
+      finalPriority: turn.finalPriority,
+      reply_text: turn.reply_text,
+      decision_source: turn.decision_source,
+      handoff_required: turn.handoff_required,
+      bridge_send_ok: send.bridge_send_ok,
+      bridge_send_error: send.bridge_send_error,
+      urgent_alert_sent: send.urgent_alert_sent,
+      urgent_alert_error: send.urgent_alert_error,
+      outbox_ids: send.outbox_ids.length ? send.outbox_ids : undefined,
+      case_id: null,
+      alert_id: null,
+      workflow_latency_ms: Date.now() - norm.workflowStartedAt,
+      dialogue_version,
+    };
+  };
+
+  if (dialogue.flow_step === "awaiting_main_menu") {
+    const menuConsumed = await tryConsumeMainMenuTurn(pool, { crm, norm, dialogue, routing });
+    if (menuConsumed) {
+      return deliverDialogueTurn(menuConsumed);
+    }
+  }
+
+  if (shouldOfferMainMenu(dialogue, norm)) {
+    return deliverDialogueTurn(offerMainMenuTurn());
   }
 
   const ollamaConfigured = Boolean((process.env.OLLAMA_URL || "").trim());

@@ -4,6 +4,7 @@
  */
 export type FlowStep =
   | "idle"
+  | "awaiting_main_menu"
   | "awaiting_specialty"
   | "choose_clinic"
   | "choose_doctor"
@@ -47,8 +48,8 @@ export type StoredDialogueState = {
   /** When flow_step is awaiting_display_name — which field we collect. */
   collect_field?: "display_name" | null;
   /** After name is saved, continue to doctor list or other step. */
-  resume_after_name?: "doctors" | null;
-  pending_kind?: "slots" | "doctors" | "clinics" | "specialties" | null;
+  resume_after_name?: "specialty" | "doctors" | null;
+  pending_kind?: "slots" | "doctors" | "clinics" | "specialties" | "main_menu" | null;
   pending_slots?: PendingSlotOffer[];
   pending_doctors?: PendingDoctorPick[];
   pending_clinics?: PendingClinicPick[];

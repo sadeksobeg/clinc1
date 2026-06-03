@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { DateTime } from "luxon";
 import { pickFirstFreeSlots, type BusyInterval } from "./availabilityEngine";
 import type { SlotOffer } from "./types";
+import { EXCLUDE_DEMO_DOCTOR_SQL } from "./excludeDemoDoctors";
 import { isWithinWorkingHours, luxonWeekdayToDb, type DayHours } from "./workingHoursGuard";
 
 export type FindSlotsParams = {
@@ -31,18 +32,20 @@ export async function resolveDoctorId(pool: Pool, p: FindSlotsParams): Promise<n
   if (p.doctorId) return p.doctorId;
   if (p.specialty) {
     const r = await pool.query(
-      `SELECT id FROM doctors
-       WHERE clinic_id = $1 AND is_active = TRUE AND deleted_at IS NULL
-         AND lower(specialty) = lower($2)
-       ORDER BY id ASC LIMIT 1`,
+      `SELECT d.id FROM doctors d
+       WHERE d.clinic_id = $1 AND d.is_active = TRUE AND d.deleted_at IS NULL
+         AND lower(d.specialty) = lower($2)
+         ${EXCLUDE_DEMO_DOCTOR_SQL}
+       ORDER BY d.id ASC LIMIT 1`,
       [p.clinicId, p.specialty],
     );
     return r.rows[0]?.id ?? null;
   }
   const r = await pool.query(
-    `SELECT id FROM doctors
-     WHERE clinic_id = $1 AND is_active = TRUE AND deleted_at IS NULL
-     ORDER BY id ASC LIMIT 1`,
+    `SELECT d.id FROM doctors d
+     WHERE d.clinic_id = $1 AND d.is_active = TRUE AND d.deleted_at IS NULL
+       ${EXCLUDE_DEMO_DOCTOR_SQL}
+     ORDER BY d.id ASC LIMIT 1`,
     [p.clinicId],
   );
   return r.rows[0]?.id ?? null;

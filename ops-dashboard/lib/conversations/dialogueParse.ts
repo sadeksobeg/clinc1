@@ -96,6 +96,7 @@ export function parseDialogueState(raw: unknown): StoredDialogueState {
   const step = o.flow_step;
   const allowed = new Set([
     "idle",
+    "awaiting_main_menu",
     "awaiting_specialty",
     "choose_clinic",
     "choose_doctor",
@@ -115,7 +116,7 @@ export function parseDialogueState(raw: unknown): StoredDialogueState {
   const cf = o.collect_field;
   const collect_field = cf === "display_name" ? cf : null;
   const ra = o.resume_after_name;
-  const resume_after_name = ra === "doctors" ? ra : null;
+  const resume_after_name = ra === "doctors" || ra === "specialty" ? ra : null;
 
   return {
     flow_step: typeof step === "string" && allowed.has(step) ? (step as StoredDialogueState["flow_step"]) : "idle",

@@ -40,6 +40,18 @@ export default function PlatformClinicsPage() {
   const [newOwnerPassword, setNewOwnerPassword] = useState("");
   const [newDoctorsCount, setNewDoctorsCount] = useState("1");
   const [newTrialDays, setNewTrialDays] = useState("7");
+  const [newSpecialtyIds, setNewSpecialtyIds] = useState<number[]>([]);
+  const [newDoctorName, setNewDoctorName] = useState("");
+
+  const specialtiesQ = useQuery({
+    queryKey: ["platform-specialties-catalog"],
+    queryFn: async () => {
+      const res = await fetch("/api/platform/specialties", { cache: "no-store" });
+      const out = (await res.json().catch(() => null)) as { ok?: boolean; specialties?: Array<{ id: number; code: string; label_ar: string }> } | null;
+      if (!res.ok || !out?.ok) return [];
+      return out.specialties ?? [];
+    },
+  });
 
   const clinicsQ = useQuery({
     queryKey: ["clinics-overview"],
@@ -183,12 +195,46 @@ export default function PlatformClinicsPage() {
                       <Input value={newDoctorsCount} onChange={(e) => setNewDoctorsCount(e.target.value)} placeholder="عدد الأطباء" />
                       <Input value={newTrialDays} onChange={(e) => setNewTrialDays(e.target.value)} placeholder="أيام التجربة" />
                     </div>
+                    <Input
+                      value={newDoctorName}
+                      onChange={(e) => setNewDoctorName(e.target.value)}
+                      placeholder="اسم الطبيب (مثال: د. أحمد)"
+                    />
+                    <div className="rounded-xl border border-border/70 p-cg-3">
+                      <p className="mb-cg-2 text-ds-small font-medium">تخصصات العيادة (يختارها المريض في واتساب)</p>
+                      <div className="flex max-h-40 flex-col gap-cg-1 overflow-y-auto">
+                        {(specialtiesQ.data ?? []).map((s) => {
+                          const checked = newSpecialtyIds.includes(s.id);
+                          return (
+                            <label key={s.id} className="flex cursor-pointer items-center gap-2 text-ds-small">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setNewSpecialtyIds((prev) =>
+                                    checked ? prev.filter((id) => id !== s.id) : [...prev, s.id],
+                                  )
+                                }
+                              />
+                              <span>{s.label_ar}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div className="flex justify-end gap-cg-2">
                       <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={action.busy}>
                         إلغاء
                       </Button>
                       <Button
-                        disabled={action.busy || newClinicName.trim().length < 2 || newOwnerName.trim().length < 2 || !newOwnerEmail.includes("@") || newOwnerPassword.length < 8}
+                        disabled={
+                          action.busy ||
+                          newClinicName.trim().length < 2 ||
+                          newOwnerName.trim().length < 2 ||
+                          !newOwnerEmail.includes("@") ||
+                          newOwnerPassword.length < 8 ||
+                          newSpecialtyIds.length < 1
+                        }
                         onClick={() =>
                           void action.run(
                             async (signal) => {
@@ -202,6 +248,8 @@ export default function PlatformClinicsPage() {
                                   owner_password: newOwnerPassword,
                                   doctors_count: Math.max(1, Math.min(50, Number(newDoctorsCount || 1) || 1)),
                                   trial_days: Math.max(1, Math.min(30, Number(newTrialDays || 7) || 7)),
+                                  specialty_ids: newSpecialtyIds,
+                                  doctor_names: newDoctorName.trim() ? [newDoctorName.trim()] : undefined,
                                 }),
                                 signal,
                               });

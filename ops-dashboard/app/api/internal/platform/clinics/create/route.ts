@@ -16,6 +16,10 @@ const bodySchema = z
     owner_password: z.string().min(8).max(200),
     doctors_count: z.number().int().min(1).max(50).default(1),
     trial_days: z.number().int().min(1).max(30).default(7),
+    /** At least one specialty from the global catalog — shown in WhatsApp booking menu. */
+    specialty_ids: z.array(z.number().int().positive()).min(1).max(12),
+    /** Optional display names per doctor (defaults to clinic name + index). */
+    doctor_names: z.array(z.string().min(2).max(120)).max(50).optional(),
   })
   .strict();
 
@@ -107,16 +111,41 @@ export async function POST(req: Request) {
       [clinicId, b.trial_days, JSON.stringify({ created_by: "platform", doctors_limit: b.doctors_count })],
     );
 
+    const specRows = await client.query<{ id: number; code: string }>(
+      `SELECT id, code FROM specialties WHERE id = ANY($1::bigint[]) AND is_active = TRUE`,
+      [b.specialty_ids],
+    );
+    if (specRows.rows.length !== b.specialty_ids.length) {
+      throw new Error("invalid_specialty_ids");
+    }
+    const primarySpec = specRows.rows[0]!;
+    for (const sid of b.specialty_ids) {
+      await client.query(
+        `INSERT INTO clinic_specialties (clinic_id, specialty_id, is_active)
+         VALUES ($1, $2, TRUE)
+         ON CONFLICT (clinic_id, specialty_id) DO UPDATE SET is_active = TRUE`,
+        [clinicId, sid],
+      );
+    }
+
     for (let i = 0; i < b.doctors_count; i += 1) {
+      const displayName = (b.doctor_names?.[i] || `${b.clinic_name} — طبيب ${i + 1}`).trim().slice(0, 120);
       const dr = await client.query<{ id: number }>(
         `INSERT INTO doctors (clinic_id, display_name, specialty, slot_duration_minutes, is_active, created_at, updated_at)
-         VALUES ($1, $2, 'general', 15, TRUE, NOW(), NOW())
+         VALUES ($1, $2, $3, 15, TRUE, NOW(), NOW())
          RETURNING id`,
-        [clinicId, `Doctor ${i + 1}`],
+        [clinicId, displayName, primarySpec.code],
       );
       const doctorId = Number(dr.rows[0]?.id || 0);
       if (doctorId > 0) {
-        // Default doctor working hours: all days 09:00–21:00
+        for (const sp of specRows.rows) {
+          await client.query(
+            `INSERT INTO doctor_specialties (doctor_id, specialty_id, is_primary)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (doctor_id, specialty_id) DO NOTHING`,
+            [doctorId, sp.id, sp.id === primarySpec.id],
+          );
+        }
         for (let weekday = 0; weekday <= 6; weekday += 1) {
           await client.query(
             `INSERT INTO doctor_working_hours (doctor_id, weekday, opens_at, closes_at, updated_at)
@@ -155,7 +184,13 @@ export async function POST(req: Request) {
       action: "platform.clinic.created",
       entityType: "clinic",
       entityId: String(clinicId),
-      payload: { slug, owner_email: b.owner_email.toLowerCase(), doctors_count: b.doctors_count, trial_days: b.trial_days },
+      payload: {
+        slug,
+        owner_email: b.owner_email.toLowerCase(),
+        doctors_count: b.doctors_count,
+        trial_days: b.trial_days,
+        specialty_ids: b.specialty_ids,
+      },
     }).catch(() => undefined);
 
     return NextResponse.json({ ok: true, clinic_id: clinicId, clinic_slug: slug, admin_user_id: userId }, { status: 201 });
