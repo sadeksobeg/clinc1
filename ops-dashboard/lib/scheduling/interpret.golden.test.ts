@@ -60,6 +60,7 @@ describe("interpretInboundText heuristic (no OLLAMA_URL)", () => {
     expect(r.intent).toBe("unknown");
     expect(r.needs_human).toBe(true);
   });
+
 });
 
 describe("parseOllamaContent Zod validation", () => {

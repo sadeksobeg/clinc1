@@ -607,7 +607,7 @@ export async function interpretInboundText(
   ctx?: InterpretBrainContext,
 ): Promise<InterpretResult> {
   const url = (process.env.OLLAMA_URL || "").replace(/\/$/, "");
-  const model = process.env.OLLAMA_MODEL || "qwen2.5:3b";
+  const model = process.env.OLLAMA_MODEL || "qwen2.5:7b";
   if (!url) return interpretInboundHeuristic(text);
 
   const userContent = brainPromptFromContext(text, ctx);

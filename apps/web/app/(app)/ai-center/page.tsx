@@ -21,15 +21,30 @@ export default async function AiCenterPage() {
   ).length;
   const handoffRate = inboundTotal > 0 ? 100 - safePercent(aiHandled, inboundTotal) : 0;
   const automationRate = inboundTotal > 0 ? safePercent(aiHandled, inboundTotal) : 0;
-  const modelName = (process.env.EXTERNAL_AI_URL || process.env.OLLAMA_MODEL || "").trim() || "Heuristic (محلي)";
-  const adapterMode = (process.env.EXTERNAL_AI_URL || "").trim() ? "External AI" : "Heuristic + Ollama";
+  const ollamaUrl = (process.env.OLLAMA_URL || "").trim();
+  const modelName = ollamaUrl
+    ? `Ollama ${(process.env.OLLAMA_MODEL || "qwen2.5:7b").trim()}`
+    : (process.env.EXTERNAL_AI_URL || "").trim()
+      ? "External AI"
+      : "Heuristic (قواعد)";
+  const adapterMode = ollamaUrl ? "Hybrid (Ollama + قواعد)" : (process.env.EXTERNAL_AI_URL || "").trim() ? "External AI" : "Heuristic";
+  const hybridRouted = Number(product.hybrid_brain_routed_total ?? 0);
+  const ollamaOk = Number(product.ollama_interpret_ok_total ?? 0);
+  const ollamaFallback = Number(product.ollama_interpret_fallback_total ?? 0);
 
   return (
     <div className="flex flex-col gap-cg-5">
       <PageHeader subtitle="نسق — الذكاء الاصطناعي" title="مركز الذكاء الاصطناعي" description="صحة الموديل، الثقة، ونسبة التحويل للموظف" />
 
-      <div className="grid gap-cg-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="محول AI" value={adapterMode} icon={Brain} />
+      <div className="grid gap-cg-3 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard label="محول AI" value={adapterMode} hint={modelName} icon={Brain} tone="ai" />
+        <StatCard
+          label="توجيه Hybrid"
+          value={formatCompactNumber(hybridRouted)}
+          hint={`Ollama OK ${formatCompactNumber(ollamaOk)} · fallback ${formatCompactNumber(ollamaFallback)}`}
+          icon={Bot}
+          tone="ai"
+        />
         <StatCard label="أتمتة الردود" value={`${automationRate}%`} hint={`${formatCompactNumber(aiHandled)} رد`} icon={TrendingUp} tone="ai" />
         <StatCard label="تحويل بشري" value={handoffCount} hint={`${handoffRate}% من الوارد`} icon={Sparkles} />
         <StatCard label="رسائل واردة" value={formatCompactNumber(inboundTotal)} icon={CircleGauge} />

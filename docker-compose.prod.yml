@@ -90,7 +90,7 @@ services:
       # يجب أن يطابق clinic-web ووظائف الـ cron — وإلا 401 Unauthorized على /api/internal/*
       SCHEDULING_SERVICE_TOKEN: ${SCHEDULING_SERVICE_TOKEN:?set SCHEDULING_SERVICE_TOKEN}
       OLLAMA_URL: ${OLLAMA_URL:-}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
       NODE_ENV: production
       REDIS_URL: ${REDIS_URL-redis://redis:6379}
       HEALTH_DEEP_TOKEN: ${HEALTH_DEEP_TOKEN:-}

@@ -24,6 +24,7 @@ import { normalizeInboundRules, resolveInboundRouteContext, type NormalizedInbou
 import { parseDialogueState } from "./dialogueParse";
 import { startBookingDialogueFlow, tryConsumeBookingDialogueTurn, type ConsumedBookingTurn } from "./bookingDialogueFlow";
 import { tryConsumeMainMenuTurn, offerMainMenuTurn, shouldOfferMainMenu } from "./mainMenuFlow";
+import { tryHybridBrainRoute } from "./hybridBrainRouter";
 import { runSchedulingDecision, type SchedulingDecision } from "./schedulingDecision";
 import { formatDateTimeAr } from "./whatsappTime";
 import { canClinicAutoReply } from "@/lib/billing/localBilling";
@@ -1151,16 +1152,7 @@ export async function processInboundPostIngest(
     }
   }
 
-  if (shouldOfferMainMenu(dialogue, norm)) {
-    return deliverDialogueTurn(offerMainMenuTurn());
-  }
-
   const ollamaConfigured = Boolean((process.env.OLLAMA_URL || "").trim());
-  const interpretFastPath =
-    ollamaConfigured &&
-    (process.env.INBOUND_INTERPRET_FAST_PATH || "").trim() !== "false" &&
-    dialogue.flow_step === "idle" &&
-    norm.ruleIntent !== "URGENT";
   const interpretText = applyIntentOverlayIfApplicable(crm.text);
   const memory = await fetchPatientConversationMemory(pool, crm.clinic_id, crm.patient_id).catch(() => null);
   const knownEntities = {
@@ -1171,12 +1163,67 @@ export async function processInboundPostIngest(
     memory_last_visit_date: memory?.facts_jsonb?.last_visit_date ?? null,
     memory_medical_flags: memory?.facts_jsonb?.medical_flags ?? null,
   };
+  const brainCtx = { dialogueState: dialogue, routing, knownEntities };
 
-  const aiThreshold = getAIConfidenceThreshold();
-  const externalAiConfigured = Boolean((process.env.EXTERNAL_AI_URL || "").trim());
+  let hybridSkipMainMenu = false;
   let int!: Awaited<ReturnType<typeof interpretInboundText>>;
   let aiInterpretApplied = false;
 
+  if (ollamaConfigured && dialogue.flow_step === "idle" && norm.ruleIntent !== "URGENT") {
+    const hybrid = await tryHybridBrainRoute(pool, {
+      crm,
+      norm,
+      dialogue,
+      routing,
+      interpretText,
+      brainCtx,
+    });
+    if (hybrid?.action === "consumed") {
+      return deliverDialogueTurn(hybrid.turn);
+    }
+    if (hybrid?.action === "handoff") {
+      void invalidateConvContextCache(crm.clinic_id, crm.conversation_id);
+      return {
+        ok: true,
+        duplicate: false,
+        clinic_id: crm.clinic_id,
+        patient_id: crm.patient_id,
+        conversation_id: crm.conversation_id,
+        inbound_message_id: crm.inbound_message_id,
+        dedupeHash: crm.dedupeHash,
+        finalIntent: hybrid.interpret.intent.toUpperCase(),
+        finalPriority: 2,
+        reply_text: "",
+        decision_source: "hybrid_brain_handoff",
+        handoff_required: true,
+        bridge_send_ok: true,
+        workflow_latency_ms: Date.now() - norm.workflowStartedAt,
+      };
+    }
+    if (hybrid?.action === "continue") {
+      int = hybrid.interpret;
+      aiInterpretApplied = true;
+      hybridSkipMainMenu = true;
+    }
+    if (hybrid?.action === "menu") {
+      return deliverDialogueTurn(offerMainMenuTurn());
+    }
+  }
+
+  if (!hybridSkipMainMenu && shouldOfferMainMenu(dialogue, norm)) {
+    return deliverDialogueTurn(offerMainMenuTurn());
+  }
+
+  const interpretFastPath =
+    !ollamaConfigured &&
+    (process.env.INBOUND_INTERPRET_FAST_PATH || "").trim() !== "false" &&
+    dialogue.flow_step === "idle" &&
+    norm.ruleIntent !== "URGENT";
+
+  const aiThreshold = getAIConfidenceThreshold();
+  const externalAiConfigured = Boolean((process.env.EXTERNAL_AI_URL || "").trim());
+
+  if (externalAiConfigured) {
   try {
     const adapter = getAIAdapter();
     const aiInput = await buildAIAnalysisInput(pool, crm, interpretText);
@@ -1220,6 +1267,7 @@ export async function processInboundPostIngest(
   } catch {
     incProductMetric("process_inbound_ai_adapter_fallback_total");
   }
+  }
 
   if (!aiInterpretApplied) {
     if (interpretFastPath) {
@@ -1235,11 +1283,7 @@ export async function processInboundPostIngest(
         }
         int = interpretInboundHeuristic(interpretText);
       } else {
-        int = await interpretInboundText(interpretText, {
-          dialogueState: dialogue,
-          routing,
-          knownEntities,
-        });
+        int = await interpretInboundText(interpretText, brainCtx);
       }
     }
   }

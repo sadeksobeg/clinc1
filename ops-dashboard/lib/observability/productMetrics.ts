@@ -36,6 +36,10 @@ type CounterKey =
   | "write_buffer_spill_replay_row_total"
   | "write_buffer_spill_bytes_appended_total"
   | "process_inbound_interpret_skipped_total"
+  | "hybrid_brain_routed_total"
+  | "hybrid_brain_menu_fallback_total"
+  | "ollama_interpret_ok_total"
+  | "ollama_interpret_fallback_total"
   | "bridge_send_blocked_policy_total"
   | "outbox_drain_sent_total"
   | "outbox_drain_blocked_total"
@@ -119,6 +123,10 @@ const counters: Record<CounterKey, number> = {
   write_buffer_spill_replay_row_total: 0,
   write_buffer_spill_bytes_appended_total: 0,
   process_inbound_interpret_skipped_total: 0,
+  hybrid_brain_routed_total: 0,
+  hybrid_brain_menu_fallback_total: 0,
+  ollama_interpret_ok_total: 0,
+  ollama_interpret_fallback_total: 0,
   bridge_send_blocked_policy_total: 0,
   outbox_drain_sent_total: 0,
   outbox_drain_blocked_total: 0,

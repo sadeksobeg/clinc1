@@ -237,6 +237,7 @@ curl -sS -H "Authorization: Bearer $SCHEDULING_SERVICE_TOKEN" \
 16. **Event replay:** `npm run db:replay-events` is **query/reporting only** today; executable replay is tied to Phase B async (`docs/PROCESS_INBOUND_ASYNC.md`).
 17. **Consumer:** with Redis + migrations `007`/`008`, run `event-consumer` → logs show `fanout_inbound_recorded`; duplicate deliveries increment `duplicate_event_skip` without double inserts in `processed_events`.
 18. **Booking + display name:** new patient without `display_name` receives name prompt; after name, doctor list or slots continues. With `OLLAMA_URL` set, doctor hint in free text can skip the doctor list when uniquely matched.
+19. **Hybrid Ollama (free text, `flow_step=idle`):** requires `OLLAMA_URL`, `INBOUND_INTERPRET_FAST_PATH=false`, and `qwen2.5:7b` on host. See [`docs/OLLAMA_VPS.md`](OLLAMA_VPS.md) — (a) pricing question → pricing copy not menu-only; (b) child fever/cough → `PENDING_HANDOFF`; (c) eye doctor tomorrow → booking FSM with specialty. Verify `GET /api/system/health/deep` → `ollama.ok` and metrics `hybrid_brain_routed_total` / `ollama_interpret_ok_total`.
 
 Record pass/fail and timestamps in your change ticket.
 

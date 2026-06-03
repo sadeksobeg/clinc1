@@ -10,6 +10,7 @@ export type DeepHealthReport = {
   db: { ok: boolean; latency_ms?: number; error?: string };
   redis: { ok: boolean; latency_ms?: number; error?: string; stream?: string; groups?: unknown };
   bridge: { ok: boolean; latency_ms?: number; status?: number; error?: string };
+  ollama?: { ok: boolean; latency_ms?: number; model?: string; error?: string };
   /** Alias for `stream_lag_ms` (plan / LB probes). */
   lag_ms: number | null;
   stream_lag_ms: number | null;
@@ -172,9 +173,29 @@ export async function runDeepHealth(pool: Pool): Promise<DeepHealthReport> {
     bridge.error = "no_bridge_url_configured";
   }
 
+  let ollama: DeepHealthReport["ollama"];
+  const ollamaUrl = (process.env.OLLAMA_URL || "").replace(/\/$/, "").trim();
+  if (ollamaUrl) {
+    const tO = Date.now();
+    ollama = { ok: false, model: process.env.OLLAMA_MODEL || "qwen2.5:7b" };
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 8000);
+      const res = await fetch(`${ollamaUrl}/api/tags`, { method: "GET", signal: ac.signal });
+      clearTimeout(timer);
+      ollama.ok = res.ok;
+      ollama.latency_ms = Date.now() - tO;
+      if (!res.ok) ollama.error = (await res.text()).slice(0, 300);
+    } catch (e) {
+      ollama.latency_ms = Date.now() - tO;
+      ollama.error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   let status: DeepHealthStatus = "ok";
   if (!db.ok) status = "down";
   else if (!redis.ok || !bridge.ok) status = "degraded";
+  if (ollama && !ollama.ok) status = status === "down" ? "down" : "degraded";
   if (redis.ok && pending_count != null && pending_count > 500) status = status === "down" ? "down" : "degraded";
   if (redis.ok && stream_lag_ms != null && stream_lag_ms > 120_000) status = status === "down" ? "down" : "degraded";
 
@@ -188,6 +209,7 @@ export async function runDeepHealth(pool: Pool): Promise<DeepHealthReport> {
     db,
     redis,
     bridge,
+    ...(ollama ? { ollama } : {}),
     lag_ms: stream_lag_ms,
     stream_lag_ms,
     pending_count,

@@ -28,7 +28,8 @@ function menuMerge(): Record<string, unknown> {
   return dialogueStateClearedMerge();
 }
 
-function pricingReply(): ConsumedBookingTurn {
+/** Pricing path for main menu or hybrid brain router. */
+export function buildPricingReplyTurn(): ConsumedBookingTurn {
   return {
     reply_text:
       "لمعرفة التكلفة بدقة، أرسل نوع الخدمة أو الحالة المطلوبة (مثلاً: كشف، متابعة، إجراء معين).\n\n" +
@@ -65,7 +66,7 @@ export async function tryConsumeMainMenuTurn(
       return startBookingDialogueFlow(pool, crm, norm, routing, { ...int, intent: "booking" }, text);
     }
     if (pick === 2 || (pick == null && isPricingKeyword(text))) {
-      return pricingReply();
+      return buildPricingReplyTurn();
     }
     if (pick === 3) {
       return {

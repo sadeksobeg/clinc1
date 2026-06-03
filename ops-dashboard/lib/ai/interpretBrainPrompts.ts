@@ -114,7 +114,13 @@ SMART BEHAVIOR:
 - Do not ask duplicate questions.
 - If all booking fields are ready → next_state toward confirmation when appropriate.
 
-You are not ChatGPT. You are a real-time booking brain inside a production SaaS system.`;
+You are not ChatGPT. You are a real-time booking brain inside a production SaaS system.
+
+EXAMPLES (Arabic — map meaning, not keywords only):
+- "كم سعر الكشفية عند د. سامي؟" → intent question, doctor_hint سامي, needs_human false, specialty null
+- "ابني عنده حرارة وكحة" → intent question or unknown, patient_context is_child true, medical_signals infection_signs true, needs_human true
+- "بدي طبيب عيون بكرا" → intent booking, specialty ophthalmology, booking_intent requested_time غداً, confidence >= 0.7
+Note: response_text is a hint only; production booking replies come from the rules engine (FSM), not raw model prose.`;
 
 export type BrainPromptClinicRow = { id: number; name: string };
 export type BrainPromptDoctorRow = { id: number; name: string; specialty?: string | null };
