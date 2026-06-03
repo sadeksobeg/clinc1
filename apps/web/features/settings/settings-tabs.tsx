@@ -271,10 +271,12 @@ export function SettingsTabs() {
       ) : null}
       <Tabs defaultValue="clinic">
         <TabsList className="mb-cg-4 flex-wrap">
-          <TabsTrigger value="clinic">بيانات العيادة</TabsTrigger>
+          <TabsTrigger value="clinic">العيادة</TabsTrigger>
           <TabsTrigger value="hours">ساعات العمل</TabsTrigger>
-          <TabsTrigger value="whatsapp">واتساب</TabsTrigger>
           <TabsTrigger value="doctors">الأطباء</TabsTrigger>
+          <TabsTrigger value="team">الفريق</TabsTrigger>
+          <TabsTrigger value="whatsapp">واتساب</TabsTrigger>
+          <TabsTrigger value="notifications">الإشعارات</TabsTrigger>
           <TabsTrigger value="specialties">التخصصات</TabsTrigger>
           <TabsTrigger value="security">الأمان</TabsTrigger>
         </TabsList>
@@ -486,6 +488,28 @@ export function SettingsTabs() {
             </div>
           </div>
         </TabsContent>
+        <TabsContent value="team">
+          <SettingsRow
+            title="أعضاء الفريق"
+            desc="إدارة حسابات الموظفين (سكرتارية، تمريض، إدارة) تتم من لوحة المنصة عند الحاجة. داخل العيادة، استخدم أدوار الدخول المخصّصة لكل مستخدم."
+          />
+          <SettingsRow
+            title="الأطباء"
+            desc="إضافة الأطباء وضبط دوامهم من تبويب «الأطباء» أعلاه."
+          />
+        </TabsContent>
+
+        <TabsContent value="notifications">
+          <SettingsRow
+            title="تنبيهات التشغيل"
+            desc="تظهر التنبيهات الحية في أيقونة الجرس بالشريط العلوي (مواعيد، تحويل بشري، فواتير). يتم جلبها من /api/ops/notifications."
+          />
+          <SettingsRow
+            title="واتساب"
+            desc="تنبيهات الردود والتحويل البشري مرتبطة بقناة واتساب المربوطة في تبويب «واتساب»."
+          />
+        </TabsContent>
+
         <TabsContent value="specialties">
           <div className="mb-cg-3 rounded-xl border border-border/70 bg-muted/20 p-cg-3 text-ds-body text-muted-foreground">
             التخصصات المُفعّلة لهذه العيادة تُحدَّد من قبل مدير المنصة (Super-admin). إن أردت إضافة/تعطيل تخصص يرجى التواصل مع الدعم.

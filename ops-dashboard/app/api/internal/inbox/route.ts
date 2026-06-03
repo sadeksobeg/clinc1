@@ -28,6 +28,7 @@ export async function GET(req: Request) {
               c.clinic_id AS owner_clinic_id,
               ${ROUTED_CLINIC_ID_SELECT_SQL},
               c.state,
+              c.handoff_reason,
               c.status,
               c.routing,
               COALESCE((c.routing->>'unread')::boolean, false) AS unread,

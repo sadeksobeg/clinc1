@@ -13,6 +13,13 @@ import { incProductMetric } from "@/lib/observability/productMetrics";
 import { enqueueCoreOutbox } from "@/lib/outbox/coreOutbox";
 import { sendPatientWhatsAppGuarded } from "@/lib/whatsapp/patientOutbound";
 import { interpretInboundHeuristic, interpretInboundText } from "@/lib/scheduling/interpret";
+import {
+  aiAnalysisToInterpretResult,
+  buildAIAnalysisInput,
+  getAIAdapter,
+  getAIConfidenceThreshold,
+  setConversationHandoffPending,
+} from "@/lib/ai/AIModelAdapter";
 import { normalizeInboundRules, resolveInboundRouteContext, type NormalizedInboundRules } from "./normalizeInbound";
 import { parseDialogueState } from "./dialogueParse";
 import { startBookingDialogueFlow, tryConsumeBookingDialogueTurn } from "./bookingDialogueFlow";
@@ -1100,25 +1107,76 @@ export async function processInboundPostIngest(
     memory_last_visit_date: memory?.facts_jsonb?.last_visit_date ?? null,
     memory_medical_flags: memory?.facts_jsonb?.medical_flags ?? null,
   };
-  let int: Awaited<ReturnType<typeof interpretInboundText>>;
-  if (interpretFastPath) {
-    incProductMetric("process_inbound_interpret_skipped_total");
-    int = interpretInboundHeuristic(interpretText);
-  } else {
-    const allowAi = await tryAcquireAiBudgetSlot(crm.conversation_id);
-    if (!allowAi) {
-      if ((process.env.INBOUND_AI_TOKEN_BUCKET || "").trim() === "1") {
-        incProductMetric("process_inbound_ai_token_denied_total");
-      } else {
-        incProductMetric("process_inbound_ai_rate_limited_total");
-      }
+
+  const aiThreshold = getAIConfidenceThreshold();
+  const externalAiConfigured = Boolean((process.env.EXTERNAL_AI_URL || "").trim());
+  let int!: Awaited<ReturnType<typeof interpretInboundText>>;
+  let aiInterpretApplied = false;
+
+  try {
+    const adapter = getAIAdapter();
+    const aiInput = await buildAIAnalysisInput(pool, crm, interpretText);
+    const aiResult = await adapter.analyze(aiInput);
+
+    if (aiResult.needs_human) {
+      await setConversationHandoffPending(
+        pool,
+        crm.conversation_id,
+        crm.clinic_id,
+        aiResult.needs_human_reason || "ai_needs_human",
+      );
+      void invalidateConvContextCache(crm.clinic_id, crm.conversation_id);
+      incProductMetric("process_inbound_ai_handoff_total");
+      return {
+        ok: true,
+        duplicate: false,
+        clinic_id: crm.clinic_id,
+        patient_id: crm.patient_id,
+        conversation_id: crm.conversation_id,
+        inbound_message_id: crm.inbound_message_id,
+        dedupeHash: crm.dedupeHash,
+        finalIntent: aiResult.intent.toUpperCase(),
+        finalPriority: 2,
+        reply_text: "",
+        decision_source: "ai_handoff_pending",
+        handoff_required: true,
+        bridge_send_ok: true,
+        workflow_latency_ms: Date.now() - norm.workflowStartedAt,
+      };
+    }
+
+    if (aiResult.confidence > aiThreshold) {
+      int = aiAnalysisToInterpretResult(
+        aiResult,
+        externalAiConfigured ? "external_ai" : "heuristic_adapter",
+      );
+      aiInterpretApplied = true;
+      incProductMetric("process_inbound_ai_adapter_applied_total");
+    }
+  } catch {
+    incProductMetric("process_inbound_ai_adapter_fallback_total");
+  }
+
+  if (!aiInterpretApplied) {
+    if (interpretFastPath) {
+      incProductMetric("process_inbound_interpret_skipped_total");
       int = interpretInboundHeuristic(interpretText);
     } else {
-      int = await interpretInboundText(interpretText, {
-        dialogueState: dialogue,
-        routing,
-        knownEntities,
-      });
+      const allowAi = await tryAcquireAiBudgetSlot(crm.conversation_id);
+      if (!allowAi) {
+        if ((process.env.INBOUND_AI_TOKEN_BUCKET || "").trim() === "1") {
+          incProductMetric("process_inbound_ai_token_denied_total");
+        } else {
+          incProductMetric("process_inbound_ai_rate_limited_total");
+        }
+        int = interpretInboundHeuristic(interpretText);
+      } else {
+        int = await interpretInboundText(interpretText, {
+          dialogueState: dialogue,
+          routing,
+          knownEntities,
+        });
+      }
     }
   }
 

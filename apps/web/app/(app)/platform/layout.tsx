@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { brandTitle } from "@/lib/brand";
+import { PlatformTopNav } from "@/components/layout/PlatformTopNav";
 
 export const metadata: Metadata = {
   title: brandTitle("إدارة المنصة"),
@@ -7,5 +8,10 @@ export const metadata: Metadata = {
 };
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
-  return <div className="animate-fade-in">{children}</div>;
+  return (
+    <div className="flex flex-col gap-cg-4 animate-fade-in">
+      <PlatformTopNav />
+      {children}
+    </div>
+  );
 }

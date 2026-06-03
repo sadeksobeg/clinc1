@@ -1,29 +1,38 @@
-import { AlertTriangle, Bot, Brain, CircleGauge, TrendingUp } from "lucide-react";
-import type { ComponentType } from "react";
+import { AlertTriangle, Bot, Brain, CircleGauge, Sparkles, TrendingUp } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { StatCard } from "@/components/app/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCompactNumber, safePercent } from "@/lib/format";
-import { fetchProductMetrics } from "@/lib/ops-server";
+import { fetchInboxRows, fetchProductMetrics } from "@/lib/ops-server";
+import { getServerClinicIdOrThrow } from "@/lib/serverSession";
 
 export default async function AiCenterPage() {
-  const metricsData = await fetchProductMetrics().catch(() => ({ ok: false as const, data: {} }));
+  const clinicId = await getServerClinicIdOrThrow();
+  const [metricsData, inboxData] = await Promise.all([
+    fetchProductMetrics().catch(() => ({ ok: false as const, data: {} })),
+    fetchInboxRows(clinicId).catch(() => ({ ok: false as const, rows: [] })),
+  ]);
   const product = metricsData.ok ? ((metricsData.data as { product?: Record<string, unknown> }).product ?? {}) : {};
   const inboundTotal = Number(product.inbound_total ?? 0);
   const aiHandled = Number(product.ai_auto_replies ?? 0);
+  const handoffCount = (inboxData.ok ? inboxData.rows ?? [] : []).filter(
+    (r) => String(r.state || "").toUpperCase() === "PENDING_HANDOFF",
+  ).length;
   const handoffRate = inboundTotal > 0 ? 100 - safePercent(aiHandled, inboundTotal) : 0;
   const automationRate = inboundTotal > 0 ? safePercent(aiHandled, inboundTotal) : 0;
-  const modelName = (process.env.OLLAMA_MODEL || "").trim();
+  const modelName = (process.env.EXTERNAL_AI_URL || process.env.OLLAMA_MODEL || "").trim() || "Heuristic (محلي)";
+  const adapterMode = (process.env.EXTERNAL_AI_URL || "").trim() ? "External AI" : "Heuristic + Ollama";
 
   return (
     <div className="flex flex-col gap-cg-5">
-      <PageHeader subtitle="نسق — الذكاء الاصطناعي" title="مركز الذكاء الاصطناعي" description="صحة النموذج والتحكم بالأتمتة" />
+      <PageHeader subtitle="نسق — الذكاء الاصطناعي" title="مركز الذكاء الاصطناعي" description="صحة الموديل، الثقة، ونسبة التحويل للموظف" />
 
-      <div className="grid gap-cg-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={Bot} title="حالة المؤشرات" value={metricsData.ok ? "متصلة" : "غير متاحة"} />
-        <MetricCard icon={Brain} title="النموذج المُعرَّف" value={modelName || "غير محدد"} />
-        <MetricCard icon={CircleGauge} title="إجمالي الرسائل الواردة (الفترة)" value={formatCompactNumber(inboundTotal)} />
-        <MetricCard icon={TrendingUp} title="حصة الرد الآلي" value={`${automationRate}%`} />
+      <div className="grid gap-cg-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="محول AI" value={adapterMode} icon={Brain} />
+        <StatCard label="أتمتة الردود" value={`${automationRate}%`} hint={`${formatCompactNumber(aiHandled)} رد`} icon={TrendingUp} tone="ai" />
+        <StatCard label="تحويل بشري" value={handoffCount} hint={`${handoffRate}% من الوارد`} icon={Sparkles} />
+        <StatCard label="رسائل واردة" value={formatCompactNumber(inboundTotal)} icon={CircleGauge} />
       </div>
 
       <div className="grid gap-cg-5 lg:grid-cols-2">
@@ -59,29 +68,5 @@ export default async function AiCenterPage() {
         </Card>
       </div>
     </div>
-  );
-}
-
-function MetricCard({
-  icon: Icon,
-  title,
-  value,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  title: string;
-  value: string;
-}) {
-  return (
-    <Card className="glass-card">
-      <CardContent className="flex items-center justify-between p-cg-5">
-        <div>
-          <p className="text-ds-body text-muted-foreground">{title}</p>
-          <p className="mt-cg-2 text-ds-h3 font-semibold">{value}</p>
-        </div>
-        <div className="grid h-10 w-10 place-content-center rounded-xl bg-primary/10 text-primary">
-          <Icon className="h-5 w-5" />
-        </div>
-      </CardContent>
-    </Card>
   );
 }

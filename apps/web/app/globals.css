@@ -29,6 +29,9 @@
     --brand-from: 174 72% 40%;
     --brand-via: 189 85% 42%;
     --brand-to: 217 91% 55%;
+    --ai-accent: 248 45% 52%;
+    --surface-sidebar: 210 40% 98%;
+    --border-hairline: 214 24% 88%;
   }
 
   .dark {
@@ -56,6 +59,9 @@
     --brand-from: 174 65% 45%;
     --brand-via: 189 80% 48%;
     --brand-to: 217 91% 60%;
+    --ai-accent: 248 50% 62%;
+    --surface-sidebar: 222 40% 9%;
+    --border-hairline: 222 24% 18%;
   }
 
   * {
@@ -73,7 +79,24 @@
 
 @layer utilities {
   .glass-card {
-    @apply rounded-2xl border border-border/60 bg-card/80 shadow-elevated backdrop-blur-xl;
+    @apply rounded-xl border border-border/60 bg-card/80 backdrop-blur-xl;
+    border-width: 0.5px;
+  }
+
+  .app-sidebar-active {
+    @apply border-e-2 border-primary bg-primary/10 text-foreground;
+  }
+
+  .ai-panel-accent {
+    color: hsl(var(--ai-accent));
+  }
+
+  .ai-panel-border {
+    border-color: hsl(var(--ai-accent) / 0.35);
+  }
+
+  .ai-panel-bg {
+    background: hsl(var(--ai-accent) / 0.08);
   }
 
   .surface-glass {

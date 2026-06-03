@@ -1,12 +1,13 @@
-import { PageHeader } from "@/components/layout/PageHeader";
-import { NurseCommandCenter } from "@/features/operations/nurse-command-center";
+import { NurseDashboard } from "@/features/dashboard/nurse-dashboard";
 import {
   fetchClinicSettings,
   fetchDoctorsRows,
   fetchInboxRows,
   fetchPatientsRows,
+  fetchProductMetrics,
   fetchUpcomingAppointments,
 } from "@/lib/ops-server";
+import { safePercent } from "@/lib/format";
 import { getPlatformActingClinicId, getServerClinicIdOrThrow, getServerSession } from "@/lib/serverSession";
 
 export default async function DashboardPage() {
@@ -25,12 +26,13 @@ export default async function DashboardPage() {
     );
   }
   const clinicId = await getServerClinicIdOrThrow();
-  const [inboxData, patientsData, appointmentsData, doctorsData, clinicSettings] = await Promise.all([
+  const [inboxData, patientsData, appointmentsData, doctorsData, clinicSettings, metricsData] = await Promise.all([
     fetchInboxRows(clinicId).catch(() => ({ ok: false as const, rows: [] })),
     fetchPatientsRows(clinicId).catch(() => ({ ok: false as const, rows: [] })),
     fetchUpcomingAppointments(clinicId, 30).catch(() => ({ ok: false as const, rows: [] })),
     fetchDoctorsRows(clinicId).catch(() => ({ ok: false as const, rows: [] })),
     fetchClinicSettings(clinicId).catch(() => ({ ok: false as const })),
+    fetchProductMetrics().catch(() => ({ ok: false as const, data: {} })),
   ]);
 
   const inboxRows = inboxData.ok ? (inboxData.rows ?? []) : [];
@@ -41,47 +43,22 @@ export default async function DashboardPage() {
     clinicSettings && (clinicSettings as { ok?: boolean; clinic?: { timezone?: string } }).ok
       ? String(((clinicSettings as { clinic?: { timezone?: string } }).clinic?.timezone ?? "") || "UTC")
       : "UTC";
-  const clinicWorkingHours = (clinicSettings as { working_hours?: unknown[] } | undefined)?.working_hours ?? [];
-
-  const showPartialBanner = [!patientsData.ok ? "المرضى" : null, !appointmentsData.ok ? "المواعيد" : null, !inboxData.ok ? "صندوق الوارد" : null, !doctorsData.ok ? "الأطباء" : null].filter(Boolean).length > 0;
+  const product = metricsData.ok
+    ? ((metricsData.data as { product?: Record<string, unknown> })?.product ?? {})
+    : {};
+  const aiHandled = Number(product.ai_auto_replies ?? 0);
+  const inboundTotal = Number(product.inbound_total ?? 0);
+  const aiAutomationPct =
+    metricsData.ok && inboundTotal > 0 ? safePercent(aiHandled, inboundTotal) : metricsData.ok ? 0 : null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-cg-4">
-      <PageHeader
-        subtitle="نسق — مركز التشغيل اللحظي"
-        title="لوحة الممرضة"
-        description={
-          <>
-            طابور حي، جدول اليوم، وإجراءات سريعة في شاشة واحدة. للمؤشرات التنفيذية والرسوم البيانية انتقل إلى{" "}
-            <a href="/analytics" className="font-medium text-primary underline underline-offset-4">
-              التحليلات
-            </a>
-            .
-          </>
-        }
-      />
-
-      {showPartialBanner ? (
-        <div className="shrink-0 rounded-2xl border border-border/80 bg-muted/30 px-cg-4 py-cg-3 text-ds-body text-muted-foreground">
-          بعض البيانات غير متاحة الآن:{" "}
-          <span className="font-medium text-foreground">
-            {[(!patientsData.ok ? "المرضى" : null), (!appointmentsData.ok ? "المواعيد" : null), (!inboxData.ok ? "صندوق الوارد" : null), (!doctorsData.ok ? "الأطباء" : null)]
-              .filter(Boolean)
-              .join("، ")}
-          </span>
-        </div>
-      ) : null}
-
-      <div className="min-h-0 flex-1">
-        <NurseCommandCenter
-          rows={appointments}
-          doctors={doctors}
-          patients={patientRows}
-          inboxRows={inboxRows}
-          clinicTimezone={clinicTimezone}
-          clinicWorkingHours={clinicWorkingHours}
-        />
-      </div>
-    </div>
+    <NurseDashboard
+      appointments={appointments}
+      inboxRows={inboxRows}
+      doctors={doctors}
+      patients={patientRows}
+      clinicTimezone={clinicTimezone}
+      aiAutomationPct={aiAutomationPct}
+    />
   );
 }

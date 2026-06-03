@@ -24,6 +24,7 @@ import { statusLabel } from "@/lib/i18n/status";
 import { buildDecisionTimeline, type TimelineTone } from "@/lib/decision-timeline";
 import type { InboxRow } from "@/lib/ops-server";
 import { WorkspacePanel } from "@/components/layout/WorkspacePanel";
+import { InboxAiPanel } from "@/features/inbox/inbox-ai-panel";
 import { cn } from "@/lib/utils";
 import { usePeriodicRefresh } from "@/hooks/usePeriodicRefresh";
 import { useUiPreferences } from "@/hooks/use-ui-preferences";
@@ -97,14 +98,22 @@ function needsReviewRow(r: InboxRow): boolean {
 
 function triageRank(r: InboxRow): number {
   if (isConfirmedEmergencyRow(r)) return 0;
-  if (isUncertainEmergencyRow(r)) return 1;
-  if (r.unread) return 2;
-  return 3;
+  if (isPendingHandoffRow(r)) return 1;
+  if (isUncertainEmergencyRow(r)) return 2;
+  if (r.unread) return 3;
+  return 4;
+}
+
+function isPendingHandoffRow(r: InboxRow): boolean {
+  return String(r.state || "").toUpperCase() === "PENDING_HANDOFF";
 }
 
 function rowPrimaryBadge(
   r: InboxRow,
 ): { label: string; variant: "danger" | "warning" | "outline" | "secondary" } | null {
+  if (isPendingHandoffRow(r)) {
+    return { label: "👤 يحتاج تدخل بشري", variant: "warning" };
+  }
   if (isConfirmedEmergencyRow(r)) {
     const mr = localizeMedicalReason(r.last_decision_primary_medical_reason ?? r.last_decision_reason ?? null);
     return { label: mr ? `🚑 طارئة — ${mr}` : "🚑 طارئة", variant: "danger" };
@@ -903,7 +912,7 @@ export function InboxWorkspace({
   }
 
   return (
-    <div className="grid h-full min-h-0 flex-1 gap-cg-4 overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)_320px]">
+    <div className="grid h-full min-h-0 flex-1 gap-cg-3 overflow-hidden xl:grid-cols-[220px_minmax(0,1fr)_220px]">
       <WorkspacePanel
         title="المحادثات"
         subtitle={isDoctorMode ? "تركيز على المريض — قائمة مُبسّطة" : "Scan سريع حسب الأولوية"}
@@ -1755,73 +1764,22 @@ export function InboxWorkspace({
         </div>
       </WorkspacePanel>
 
-      <WorkspacePanel title="السياق" subtitle="ملخص سريع للحالة والملف" className="h-fit" contentClassName="p-cg-4">
-        <div className="flex flex-col gap-cg-3 text-ds-body">
-          <div className="rounded-xl bg-muted/50 p-cg-3">
-            <p className="text-ds-small text-muted-foreground">الاسم</p>
-            <p className="font-medium">{detail?.display_name ?? selectedThread?.display_name ?? "غير معروف"}</p>
-          </div>
-          {contextContactLine !== "—" ? (
-            <div className="rounded-xl bg-muted/50 p-cg-3">
-              <p className="text-ds-small text-muted-foreground">📞 واتساب / هاتف</p>
-              <p dir="ltr" className="font-mono font-medium">
-                {contextContactLine}
-              </p>
-              {contactIsLidWithoutPhone ? (
-                <p className="mt-cg-2 text-ds-label text-warning">
-                  المعروض معرّف واتساب داخلي (LID) وليس بالضرورة رقم الهاتف. إن وُجد رقم في ملف المريض سيظهر هنا بعد المزامنة.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          {patientFlowBadges.length > 0 ? (
-            <div className="rounded-xl bg-muted/50 p-cg-3">
-              <p className="mb-cg-2 text-ds-small text-muted-foreground">حالة المريض (من آخر تحليل)</p>
-              <div className="flex flex-wrap gap-cg-1">
-                {patientFlowBadges.map((b) => (
-                  <Badge key={b.label} variant={b.variant}>
-                    {b.label}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          <div className="rounded-xl bg-muted/50 p-cg-3">
-            <p className="text-ds-small text-muted-foreground">حالة المحادثة</p>
-            <p className="font-medium">{statusLabel(detail?.state ?? selectedThread?.state ?? "unassigned")}</p>
-          </div>
-          <div className="rounded-xl bg-muted/50 p-cg-3">
-            <p className="text-ds-small text-muted-foreground">آخر نشاط</p>
-            <p className="font-medium text-muted-foreground">{formatRelativeAge(selectedThread?.last_message_at)}</p>
-          </div>
-          <div className="rounded-xl bg-muted/50 p-cg-3">
-            <p className="mb-cg-2 text-ds-small text-muted-foreground">ملخص الذكاء</p>
-            <p className="leading-relaxed text-muted-foreground">
-              {detail?.summary ?? "لا يوجد ملخص مخزَّن لهذه المحادثة."}
-            </p>
-          </div>
+      <WorkspacePanel title="الذكاء والسياق" subtitle="تحليل + ملف" className="flex min-h-0 flex-col" contentClassName="flex min-h-0 flex-col p-cg-0">
+        <InboxAiPanel
+          thread={selectedThread}
+          detail={detail}
+          suggestedReply={draft}
+          onApplySuggestion={() => void suggestAiReply()}
+          timelineItems={timelineItems.map((t) => ({ id: t.id, title: t.title, tone: t.tone }))}
+        />
+        <div className="border-t border-border/50 p-cg-3 text-[12px]">
+          <p className="font-medium">{detail?.display_name ?? selectedThread?.display_name ?? "—"}</p>
+          <p dir="ltr" className="mt-cg-1 text-muted-foreground">{contextContactLine}</p>
           {selectedThread?.patient_id ? (
-            <div className="flex flex-col gap-cg-2">
-              <Button variant="default" size="sm" className="w-full" asChild>
-                <Link href={`/appointments?patient_id=${selectedThread.patient_id}`}>إنشاء موعد</Link>
-              </Button>
-              <Button variant="outline" size="sm" className="w-full" asChild>
-                <Link href={`/patients/${selectedThread.patient_id}`}>فتح الملف</Link>
-              </Button>
-            </div>
+            <Button variant="outline" size="sm" className="mt-cg-2 h-8 w-full" asChild>
+              <Link href={`/patients/${selectedThread.patient_id}`}>فتح ملف المريض</Link>
+            </Button>
           ) : null}
-          {selectedThread && inboxRowIsUrgent(selectedThread) ? (
-            <div className="rounded-xl border border-danger/40 bg-danger/5 p-cg-3 text-ds-small text-danger">
-              آخر رسالة واردة مُعلَّمة كعاجلة أو نية طوارئ — راجع السجل قبل الرد.
-            </div>
-          ) : null}
-          <div className="rounded-xl bg-accent/10 p-cg-3 text-accent">
-            <div className="mb-cg-1 flex items-center gap-cg-2">
-              <MessageSquare className="h-4 w-4" />
-              <span className="font-medium">ملاحظات</span>
-            </div>
-            <p className="text-ds-small text-muted-foreground">الحقول الداخلية للملف الكامل تظهر في صفحة المريض.</p>
-          </div>
         </div>
       </WorkspacePanel>
     </div>

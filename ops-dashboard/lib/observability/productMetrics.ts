@@ -29,6 +29,9 @@ type CounterKey =
   | "process_inbound_deferred_stale_requeue_total"
   | "process_inbound_ai_rate_limited_total"
   | "process_inbound_ai_token_denied_total"
+  | "process_inbound_ai_handoff_total"
+  | "process_inbound_ai_adapter_applied_total"
+  | "process_inbound_ai_adapter_fallback_total"
   | "write_buffer_spill_append_total"
   | "write_buffer_spill_replay_row_total"
   | "write_buffer_spill_bytes_appended_total"
@@ -109,6 +112,9 @@ const counters: Record<CounterKey, number> = {
   process_inbound_deferred_stale_requeue_total: 0,
   process_inbound_ai_rate_limited_total: 0,
   process_inbound_ai_token_denied_total: 0,
+  process_inbound_ai_handoff_total: 0,
+  process_inbound_ai_adapter_applied_total: 0,
+  process_inbound_ai_adapter_fallback_total: 0,
   write_buffer_spill_append_total: 0,
   write_buffer_spill_replay_row_total: 0,
   write_buffer_spill_bytes_appended_total: 0,

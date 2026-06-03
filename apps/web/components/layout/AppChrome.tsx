@@ -181,7 +181,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
       className="min-h-screen overflow-hidden bg-gradient-to-b from-background via-background to-muted/35"
     >
       <div className="flex min-h-screen overflow-hidden">
-        <aside className="hidden w-72 border-e border-border/70 bg-card/80 px-cg-4 py-cg-5 backdrop-blur-xl lg:flex lg:flex-col">
+        <aside className="hidden w-[15.5rem] shrink-0 border-e border-border/70 bg-[hsl(var(--surface-sidebar))] px-cg-3 py-cg-5 lg:flex lg:flex-col">
           <Link href="/dashboard" className="mb-cg-6 flex items-center gap-cg-3 rounded-2xl px-cg-3 py-cg-2 hover:bg-muted/70">
             <Logo size="md" />
             <div className="min-w-0">
@@ -199,16 +199,16 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "group flex items-center gap-cg-3 rounded-2xl px-cg-3 py-cg-3 text-ds-body transition-all",
+                    "group flex items-center gap-cg-3 rounded-lg border-e-2 px-cg-3 py-cg-2.5 text-ds-body transition-colors",
                     active
-                      ? "nasaq-gradient text-white shadow-glow"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      ? "app-sidebar-active font-medium"
+                      : "border-e-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                   )}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <div>
                     <p className="font-medium">{item.label}</p>
-                    <p className={cn("text-ds-label", active ? "text-primary-foreground/75" : "text-muted-foreground/80")}>
+                    <p className={cn("text-ds-label", active ? "text-primary/80" : "text-muted-foreground/80")}>
                       {item.description}
                     </p>
                   </div>

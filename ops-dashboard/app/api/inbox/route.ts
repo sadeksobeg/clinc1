@@ -22,6 +22,7 @@ export async function GET() {
             c.clinic_id AS owner_clinic_id,
             ${ROUTED_CLINIC_ID_SELECT_SQL},
             c.state,
+            c.handoff_reason,
             c.status,
             p.id AS patient_id,
             p.chat_id,

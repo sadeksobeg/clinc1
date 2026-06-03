@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { extractWhatsAppDigits, formatArabicDate } from "@/lib/format";
 import { statusLabel } from "@/lib/i18n/status";
@@ -23,20 +24,20 @@ export default async function PatientProfilePage({ params }: { params: { id: str
 
   return (
     <div className="flex flex-col gap-cg-6">
-      <div className="flex flex-wrap items-end justify-between gap-cg-4">
-        <div>
-          <p className="text-ds-body text-muted-foreground">
-            <Link href="/patients" className="hover:text-foreground">
+      <PageHeader
+        title={p.display_name ?? p.chat_id}
+        subtitle={
+          <>
+            <Link href="/patients" className="text-muted-foreground hover:text-foreground">
               المرضى
             </Link>
-            {" / "}
-            <span className="text-foreground">الملف</span>
-          </p>
-          <h1 className="text-ds-h1 font-semibold tracking-tight">{p.display_name ?? p.chat_id}</h1>
-          <p className="mt-cg-1 text-ds-small text-muted-foreground">ملف تشغيلي يعتمد على بيانات واتساب والمواعيد الفعلية.</p>
-        </div>
-        <PatientIdentityActions patientId={id} waDigits={waDigits} chatId={p.chat_id} lastConversationId={lastConversationId} />
-      </div>
+            {" · معلومات · زيارات · محادثات"}
+          </>
+        }
+        right={
+          <PatientIdentityActions patientId={id} waDigits={waDigits} chatId={p.chat_id} lastConversationId={lastConversationId} />
+        }
+      />
 
       <div className="grid gap-cg-5 lg:grid-cols-2">
         <section className="glass-card rounded-2xl border border-border/80 p-cg-5">

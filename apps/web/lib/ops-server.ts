@@ -29,6 +29,7 @@ export type InboxRow = {
   owner_clinic_id?: number;
   routed_clinic_id?: number | null;
   state: string;
+  handoff_reason?: string | null;
   status: string;
   routing?: Record<string, unknown>;
   unread?: boolean;
