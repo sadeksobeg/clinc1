@@ -46,15 +46,19 @@ async function sendViaSmtp(payload: ContactPayload): Promise<boolean> {
     `— نموذج تواصل ${brand.siteUrl}`,
   ].join("\n");
 
-  await transporter.sendMail({
-    from: smtpFromAddress(),
-    to,
-    replyTo: payload.email,
-    subject,
-    text,
-  });
-
-  return true;
+  try {
+    await transporter.sendMail({
+      from: smtpFromAddress(),
+      to,
+      replyTo: payload.email,
+      subject,
+      text,
+    });
+    return true;
+  } catch (err) {
+    console.error("[contact-mail] SMTP send failed", err);
+    return false;
+  }
 }
 
 async function sendViaWebhook(payload: ContactPayload): Promise<boolean> {
@@ -75,9 +79,25 @@ async function sendViaWebhook(payload: ContactPayload): Promise<boolean> {
   return res.ok;
 }
 
+export type DeliverContactResult =
+  | { status: "sent" }
+  | { status: "not_configured" }
+  | { status: "send_failed" };
+
+function smtpConfigured(): boolean {
+  return Boolean(
+    process.env.SMTP_HOST?.trim() && process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim(),
+  );
+}
+
 /** Sends contact form to info@tenegta.com via SMTP or optional webhook. */
-export async function deliverContactMessage(payload: ContactPayload): Promise<"sent" | "not_configured"> {
-  if (await sendViaSmtp(payload)) return "sent";
-  if (await sendViaWebhook(payload)) return "sent";
-  return "not_configured";
+export async function deliverContactMessage(payload: ContactPayload): Promise<DeliverContactResult> {
+  const smtpTried = smtpConfigured();
+  if (smtpTried) {
+    if (await sendViaSmtp(payload)) return { status: "sent" };
+    if (await sendViaWebhook(payload)) return { status: "sent" };
+    return { status: "send_failed" };
+  }
+  if (await sendViaWebhook(payload)) return { status: "sent" };
+  return { status: "not_configured" };
 }
