@@ -6,6 +6,7 @@ import type { NormalizedInboundRules } from "./normalizeInbound";
 import { repromptMainMenu, welcomeMainMenu } from "./patientCopy";
 import type { ConsumedBookingTurn } from "./bookingDialogueFlow";
 import { startBookingDialogueFlow } from "./bookingDialogueFlow";
+import { interpretInboundHeuristic } from "@/lib/scheduling/interpret";
 import type { InterpretResult } from "@/lib/scheduling/types";
 
 function nowIso(): string {
@@ -64,15 +65,7 @@ export async function tryConsumeMainMenuTurn(
   if (step === "awaiting_main_menu") {
     const pick = parseListSelection1Based(text, 3);
     if (pick === 1 || (pick == null && isBookingKeyword(text))) {
-      const int: InterpretResult = args.interpret ?? {
-        intent: "booking",
-        specialty: null,
-        doctor_hint: null,
-        clinic_hint: null,
-        patient_name: null,
-        urgency: "normal",
-        emergency: { detected: false, severity: 1 },
-      };
+      const int = args.interpret ?? interpretInboundHeuristic(text || "حجز");
       return startBookingDialogueFlow(pool, crm, norm, routing, { ...int, intent: "booking" }, text);
     }
     if (pick === 2 || (pick == null && isPricingKeyword(text))) {
