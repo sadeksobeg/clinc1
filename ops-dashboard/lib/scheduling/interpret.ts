@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ollamaJsonChat } from "@/lib/ai/ollamaJsonChat";
+import { incProductMetric } from "@/lib/observability/productMetrics";
 import { BRAIN_SYSTEM_PROMPT, buildBrainUserPrompt, type BrainPromptInput } from "@/lib/ai/interpretBrainPrompts";
 import type { InterpretResult } from "./types";
 
@@ -620,11 +621,18 @@ export async function interpretInboundText(
       ],
       { model, temperature: 0.2 },
     );
-    if (!raw) return interpretInboundHeuristic(text);
+    if (!raw) {
+      incProductMetric("ollama_interpret_fallback_total");
+      return interpretInboundHeuristic(text);
+    }
     const parsed = parseOllamaContent(raw, text);
-    if (parsed) return parsed;
+    if (parsed) {
+      incProductMetric("ollama_interpret_ok_total");
+      return parsed;
+    }
+    incProductMetric("ollama_interpret_fallback_total");
   } catch {
-    /* fall through */
+    incProductMetric("ollama_interpret_fallback_total");
   }
   return interpretInboundHeuristic(text);
 }

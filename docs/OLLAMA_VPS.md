@@ -12,6 +12,7 @@ Default model name if `OLLAMA_MODEL` is unset: `qwen2.5:7b` (must match a tag in
 
 - Ubuntu 22.04+
 - 8 vCPU, 16 GB RAM for `qwen2.5:7b` in production traffic (adjust after load tests).
+- **CPU-only (no GPU):** use `qwen2.5:3b` in `.env.prod` — `7b` often exceeds 3 minutes per `/api/chat` and falls back to heuristic.
 
 ## Install Ollama
 
@@ -38,10 +39,17 @@ curl -s http://127.0.0.1:11434/api/tags
 On the same host (or private network), set:
 
 ```env
-OLLAMA_URL=http://127.0.0.1:11434
+OLLAMA_URL=http://172.16.1.1:11434
 OLLAMA_MODEL=qwen2.5:7b
 INBOUND_INTERPRET_FAST_PATH=false
+OLLAMA_CHAT_TIMEOUT_MS=300000
+OLLAMA_KEEP_ALIVE=30m
+OLLAMA_NUM_PREDICT=384
 ```
+
+On Docker Linux use compose network **gateway** (e.g. `172.16.1.1`), not `127.0.0.1` inside the container. Bind Ollama with `OLLAMA_HOST=0.0.0.0:11434` (systemd override) and allow `172.16.1.0/24` to port 11434.
+
+**Warmup after deploy:** `sudo bash scripts/vps-warmup-ollama.sh` (first load can take several minutes on CPU).
 
 If ops-dashboard runs in Docker on Linux, `127.0.0.1` inside the container is not the host. Use the compose network gateway IP for Ollama on the host (see `.env.prod.example`).
 
