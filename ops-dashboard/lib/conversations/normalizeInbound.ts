@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { getLockedClinic } from "@/lib/conversations/clinicRoutingGuard";
 
 export type NormalizedInboundRules = {
   from: string;
@@ -172,6 +173,10 @@ export async function resolveInboundRouteContext(
     );
     const row = conv.rows[0] as { clinic_id: number; routing: Record<string, unknown> } | undefined;
     if (row) {
+      const locked = getLockedClinic(row.routing || {});
+      if (locked != null) {
+        return { ...base, clinic_id: locked, hub_clinic_id: Number(row.clinic_id) };
+      }
       const sel = (row.routing || {}).selected_clinic_id;
       if (typeof sel === "number" && Number.isFinite(sel)) {
         return { ...base, clinic_id: sel, hub_clinic_id: Number(row.clinic_id) };

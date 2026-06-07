@@ -25,6 +25,7 @@ import { parseDialogueState } from "./dialogueParse";
 import { startBookingDialogueFlow, tryConsumeBookingDialogueTurn, type ConsumedBookingTurn } from "./bookingDialogueFlow";
 import { tryConsumeMainMenuTurn, offerMainMenuTurn, shouldOfferMainMenu } from "./mainMenuFlow";
 import { tryHybridBrainRoute } from "./hybridBrainRouter";
+import { tryRulesEngineRoute } from "./rulesEngineRoute";
 import { runSchedulingDecision, type SchedulingDecision } from "./schedulingDecision";
 import { formatDateTimeAr } from "./whatsappTime";
 import { canClinicAutoReply } from "@/lib/billing/localBilling";
@@ -1150,6 +1151,30 @@ export async function processInboundPostIngest(
     if (menuConsumed) {
       return deliverDialogueTurn(menuConsumed);
     }
+  }
+
+  const rulesResult = await tryRulesEngineRoute(pool, { crm, norm, dialogue, routing });
+  if (rulesResult === "handoff") {
+    void invalidateConvContextCache(crm.clinic_id, crm.conversation_id);
+    return {
+      ok: true,
+      duplicate: false,
+      clinic_id: crm.clinic_id,
+      patient_id: crm.patient_id,
+      conversation_id: crm.conversation_id,
+      inbound_message_id: crm.inbound_message_id,
+      dedupeHash: crm.dedupeHash,
+      finalIntent: "UNKNOWN",
+      finalPriority: 2,
+      reply_text: "",
+      decision_source: "rules_engine_handoff",
+      handoff_required: true,
+      bridge_send_ok: true,
+      workflow_latency_ms: Date.now() - norm.workflowStartedAt,
+    };
+  }
+  if (rulesResult && typeof rulesResult === "object") {
+    return deliverDialogueTurn(rulesResult);
   }
 
   const ollamaConfigured = Boolean((process.env.OLLAMA_URL || "").trim());

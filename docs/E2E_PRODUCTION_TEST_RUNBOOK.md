@@ -237,7 +237,16 @@ curl -sS -H "Authorization: Bearer $SCHEDULING_SERVICE_TOKEN" \
 16. **Event replay:** `npm run db:replay-events` is **query/reporting only** today; executable replay is tied to Phase B async (`docs/PROCESS_INBOUND_ASYNC.md`).
 17. **Consumer:** with Redis + migrations `007`/`008`, run `event-consumer` → logs show `fanout_inbound_recorded`; duplicate deliveries increment `duplicate_event_skip` without double inserts in `processed_events`.
 18. **Booking + display name:** new patient without `display_name` receives name prompt; after name, doctor list or slots continues. With `OLLAMA_URL` set, doctor hint in free text can skip the doctor list when uniquely matched.
-19. **Hybrid Ollama (free text, `flow_step=idle`):** requires `OLLAMA_URL`, `INBOUND_INTERPRET_FAST_PATH=false`, and `qwen2.5:7b` on host. See [`docs/OLLAMA_VPS.md`](OLLAMA_VPS.md) — (a) pricing question → pricing copy not menu-only; (b) child fever/cough → `PENDING_HANDOFF`; (c) eye doctor tomorrow → booking FSM with specialty. Verify `GET /api/system/health/deep` → `ollama.ok` and metrics `hybrid_brain_routed_total` / `ollama_interpret_ok_total`.
+19. **Hybrid Ollama (free text, `flow_step=idle`):** optional when `OLLAMA_URL` is set — see [`docs/OLLAMA_VPS.md`](OLLAMA_VPS.md). Without Ollama, scenario 20 covers the same intents via rules.
+20. **Pure rules engine (no `OLLAMA_URL`, `flow_step=idle`):** after deploy, send these seven messages in order on a test number (one clinic locked after first explicit pick):
+    - `بدي موعد` → booking FSM (not menu-only stall)
+    - `كم الكشف` → prices from `visit_types` or `clinics.metadata.pricing` fallback
+    - `بدي د. سامي` → doctor match / disambiguation / slots
+    - `أيوه` during `slot_offer` or `awaiting_confirm` → confirm via FSM (rules skip interactive steps)
+    - `لا` during slot offer → alternate slot prompt
+    - `إلغاء موعد` → `awaiting_cancel_confirm` then `1` confirms cancel
+    - off-topic (e.g. weather) → polite redirect + main menu
+    Verify `GET /api/internal/metrics/product` includes `rules_engine_routed_total`, `rules_engine_unknown_total`, `clinic_lock_applied_total`. After clinic pick, `conversations.routing->locked_clinic_id` stays fixed.
 
 Record pass/fail and timestamps in your change ticket.
 

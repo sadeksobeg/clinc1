@@ -2,14 +2,14 @@ import { DateTime } from "luxon";
 import type { Pool } from "pg";
 import type { InboundIngestRow } from "@/lib/crm/inboundIngest";
 import { confirmAppointment } from "@/lib/scheduling/appointmentService";
-import {
+import { setConversationSelectedClinicTx,
   listClinics,
   listSpecialtiesForClinics,
-  setConversationSelectedClinicTx,
   setConversationSelectedDoctor,
   setConversationSelectedSpecialty,
   type SpecialtyForRouting,
 } from "@/lib/scheduling/routingActions";
+import { ensureClinicLock } from "@/lib/conversations/clinicRoutingGuard";
 import { EXCLUDE_DEMO_DOCTOR_SQL } from "@/lib/scheduling/excludeDemoDoctors";
 import { explainNoSlots, findNextSlots } from "@/lib/scheduling/slotService";
 import type { InterpretResult } from "@/lib/scheduling/types";
@@ -256,6 +256,7 @@ async function commitSelectedClinic(pool: Pool, conversationId: number, clinicId
   } finally {
     lk.release();
   }
+  await ensureClinicLock(pool, conversationId, clinicId, "user_selected");
 }
 
 /** Shared path after a clinic row is chosen (list reply or AI clinic_hint). */

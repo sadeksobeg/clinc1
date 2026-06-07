@@ -11,6 +11,7 @@ export type FlowStep =
   | "slot_offer"
   | "awaiting_confirm"
   | "awaiting_display_name"
+  | "awaiting_cancel_confirm"
   | "done";
 
 export type PendingSlotOffer = {
@@ -62,6 +63,7 @@ export type StoredDialogueState = {
   time_pref?: DialogueTimePref | null;
   /** Slot list pagination for "مواعيد أخرى" in slot_offer. */
   slot_page?: number;
+  pending_cancel_appointment_id?: number | null;
   updated_at?: string;
 };
 

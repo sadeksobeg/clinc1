@@ -40,6 +40,10 @@ type CounterKey =
   | "hybrid_brain_menu_fallback_total"
   | "ollama_interpret_ok_total"
   | "ollama_interpret_fallback_total"
+  | "rules_engine_routed_total"
+  | "rules_engine_handoff_total"
+  | "rules_engine_unknown_total"
+  | "clinic_lock_applied_total"
   | "bridge_send_blocked_policy_total"
   | "outbox_drain_sent_total"
   | "outbox_drain_blocked_total"
@@ -127,6 +131,10 @@ const counters: Record<CounterKey, number> = {
   hybrid_brain_menu_fallback_total: 0,
   ollama_interpret_ok_total: 0,
   ollama_interpret_fallback_total: 0,
+  rules_engine_routed_total: 0,
+  rules_engine_handoff_total: 0,
+  rules_engine_unknown_total: 0,
+  clinic_lock_applied_total: 0,
   bridge_send_blocked_policy_total: 0,
   outbox_drain_sent_total: 0,
   outbox_drain_blocked_total: 0,
